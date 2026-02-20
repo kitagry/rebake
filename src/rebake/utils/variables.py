@@ -15,11 +15,7 @@ def detect_new_variables(template_dir: Path, old_context: dict[str, Any]) -> dic
     """
     cookiecutter_json = template_dir / "cookiecutter.json"
     template_vars: dict[str, Any] = json.loads(cookiecutter_json.read_text())
-    return {
-        k: v
-        for k, v in template_vars.items()
-        if k not in old_context and not k.startswith("_")
-    }
+    return {k: v for k, v in template_vars.items() if k not in old_context and not k.startswith("_")}
 
 
 def cookiecutter_prompt(new_vars: dict[str, Any]) -> dict[str, Any]:

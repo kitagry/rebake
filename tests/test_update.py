@@ -1,18 +1,21 @@
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch
+
+import pytest
 
 from rebake.update import run_update
 
 
 def make_project(tmp_path: Path, commit: str = "abc123") -> Path:
     (tmp_path / ".cruft.json").write_text(
-        json.dumps({
-            "template": "https://github.com/owner/template",
-            "commit": commit,
-            "context": {"cookiecutter": {"project_name": "my-project"}},
-        })
+        json.dumps(
+            {
+                "template": "https://github.com/owner/template",
+                "commit": commit,
+                "context": {"cookiecutter": {"project_name": "my-project"}},
+            }
+        )
     )
     (tmp_path / ".git").mkdir()  # gitリポジトリに見せかける
     return tmp_path
@@ -60,6 +63,7 @@ def test_update_saves_new_commit_and_context(tmp_path):
         run_update(project_dir)
 
     from rebake.config import CruftConfig
+
     updated = CruftConfig.load(project_dir)
     assert updated.commit == "def456"
     assert updated.context["cookiecutter"]["license"] == "Apache-2.0"
