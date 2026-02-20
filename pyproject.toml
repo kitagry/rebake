@@ -1,0 +1,28 @@
+[project]
+name = "rebake"
+version = "0.1.0"
+description = "A spiritual successor to cruft for managing cookiecutter projects"
+readme = "README.md"
+authors = [
+    { name = "Ryo Kitagawa", email = "kitadrum50@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cookiecutter>=2.6.0",
+    "typer>=0.15.1",
+    "gitpython>=3.1.44",
+    "rich>=13.9.4",
+]
+
+[project.scripts]
+rebake = "rebake.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-mock>=3.14.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.24,<0.10.0"]
+build-backend = "uv_build"
