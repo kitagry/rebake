@@ -25,9 +25,7 @@ def run_update(project_dir: Path = Path(".")) -> None:
     Raises RuntimeError when the working tree has uncommitted changes.
     """
     if not is_working_tree_clean(project_dir):
-        raise RuntimeError(
-            "Project has uncommitted changes. Please commit or stash them before updating."
-        )
+        raise RuntimeError("Project has uncommitted changes. Please commit or stash them before updating.")
 
     config = CruftConfig.load(project_dir)
     old_commit = config.commit
@@ -68,10 +66,7 @@ def run_update(project_dir: Path = Path(".")) -> None:
     if patch:
         success = apply_patch(patch, project_dir, three_way=True)
         if not success:
-            console.print(
-                "[red]Patch could not be applied cleanly.[/red] "
-                "Resolve conflicts manually."
-            )
+            console.print("[red]Patch could not be applied cleanly.[/red] Resolve conflicts manually.")
         else:
             console.print("[green]✓[/green] Patch applied successfully.")
     else:

@@ -1,9 +1,8 @@
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from rebake.check import is_up_to_date, CheckResult
+from rebake.check import CheckResult, is_up_to_date
 
 
 def make_cruft_file(tmp_path, commit: str) -> Path:
