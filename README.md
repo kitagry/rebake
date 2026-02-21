@@ -13,7 +13,18 @@ rebake improves on cruft in two key areas:
 - [uv](https://docs.astral.sh/uv/)
 - Git
 
+## Quick Start
+
+```bash
+uvx rebake check
+uvx rebake update
+```
+
+> No installation required. Uses [uv](https://docs.astral.sh/uv/).
+
 ## Installation
+
+To install permanently:
 
 ```bash
 uv tool install rebake
