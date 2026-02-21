@@ -1,12 +1,12 @@
 [project]
 name = "rebake"
-version = "0.1.0"
 description = "A spiritual successor to cruft for managing cookiecutter projects"
 readme = "README.md"
 authors = [
     { name = "Ryo Kitagawa", email = "kitadrum50@gmail.com" }
 ]
 requires-python = ">=3.12"
+dynamic = ["version"]
 dependencies = [
     "cookiecutter>=2.6.0",
     "typer>=0.15.1",
@@ -35,6 +35,15 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+enable = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rebake"]
+
 [build-system]
-requires = ["uv_build>=0.9.24,<0.10.0"]
-build-backend = "uv_build"
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
