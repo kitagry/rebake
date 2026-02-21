@@ -100,7 +100,10 @@ def apply_patch(patch: str, project_dir: Path = Path(".")) -> tuple[bool, str]:
     """
     git_root = _git_root(project_dir)
     directory = project_dir.relative_to(git_root)
-    cmd_base = ["git", "apply", "--ignore-whitespace", f"--directory={directory}"]
+    cmd_base = ["git", "apply", "--ignore-whitespace"]
+    # --directory=. causes git to produce invalid paths like ./file.txt
+    if directory != Path("."):
+        cmd_base.append(f"--directory={directory}")
 
     result = subprocess.run(
         [*cmd_base, "-"],
