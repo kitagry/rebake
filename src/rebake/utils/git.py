@@ -75,37 +75,95 @@ def is_working_tree_clean(project_dir: Path = Path(".")) -> bool:
     return result.stdout.strip() == ""
 
 
-def apply_patch(patch: str, project_dir: Path = Path("."), three_way: bool = True) -> bool:
+def _git_root(project_dir: Path) -> Path:
+    """Return the root of the git worktree containing project_dir."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(project_dir),
+    )
+    return Path(result.stdout.strip())
+
+
+def apply_patch(patch: str, project_dir: Path = Path(".")) -> tuple[bool, str]:
     """Apply a patch string via git apply.
 
-    When three_way is True, passes -3 so conflicts become inline markers
-    instead of .rej files.  Returns True on success.
+    Runs git apply from the git root with --directory so that patch paths
+    (relative to the rendered template project) resolve correctly even when
+    project_dir is a subdirectory of the git worktree.
+
+    Attempts a clean apply first. On failure, falls back to --reject so that
+    applicable hunks are still written and only conflicts end up as .rej files.
+    Returns (all_hunks_applied, stderr).
     """
-    args = ["git", "apply"]
-    if three_way:
-        args.append("-3")
-    args.append("-")
+    git_root = _git_root(project_dir)
+    directory = project_dir.relative_to(git_root)
+    cmd_base = ["git", "apply", "--ignore-whitespace", f"--directory={directory}"]
 
     result = subprocess.run(
-        args,
+        [*cmd_base, "-"],
         input=patch,
         capture_output=True,
         text=True,
-        cwd=str(project_dir),
+        cwd=str(git_root),
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        return True, ""
+
+    # Partial fallback: apply what we can, write .rej files for conflicts
+    result = subprocess.run(
+        [*cmd_base, "--reject", "-"],
+        input=patch,
+        capture_output=True,
+        text=True,
+        cwd=str(git_root),
+    )
+    return False, result.stderr
+
+
+def _common_ancestor(path1: Path, path2: Path) -> Path | None:
+    """Return the deepest common directory ancestor of two absolute paths."""
+    common_parts: list[str] = []
+    for a, b in zip(path1.parts, path2.parts):
+        if a == b:
+            common_parts.append(a)
+        else:
+            break
+    if len(common_parts) <= 1:  # only the filesystem root
+        return None
+    return Path(*common_parts)
 
 
 def generate_diff(old_dir: Path, new_dir: Path) -> str:
     """Return a unified diff between two directories as a patch string."""
-    result = subprocess.run(
-        ["git", "diff", "--no-index", str(old_dir), str(new_dir)],
-        capture_output=True,
-        text=True,
-    )
+    old_real = old_dir.resolve()
+    new_real = new_dir.resolve()
+
+    # Run from the common ancestor with relative paths to avoid absolute-path and symlink quirks
+    common = _common_ancestor(old_real, new_real)
+    if common is not None:
+        old_rel = str(old_real.relative_to(common))
+        new_rel = str(new_real.relative_to(common))
+        result = subprocess.run(
+            ["git", "diff", "--no-index", "--binary", old_rel, new_rel],
+            capture_output=True,
+            text=True,
+            cwd=str(common),
+        )
+        raw = result.stdout
+        old_prefix = old_rel + "/"
+        new_prefix = new_rel + "/"
+    else:
+        result = subprocess.run(
+            ["git", "diff", "--no-index", "--binary", str(old_real), str(new_real)],
+            capture_output=True,
+            text=True,
+        )
+        raw = result.stdout
+        old_prefix = str(old_real) + "/"
+        new_prefix = str(new_real) + "/"
+
     # git diff exits with 1 when there are differences; that is expected
-    raw = result.stdout
-    # Normalize absolute temp paths to relative paths for git apply
-    old_prefix = str(old_dir) + "/"
-    new_prefix = str(new_dir) + "/"
     return raw.replace(old_prefix, "").replace(new_prefix, "")

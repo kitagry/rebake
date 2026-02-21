@@ -87,7 +87,7 @@ def test_update_skips_prompt_when_no_new_variables(tmp_path):
     mock_prompt.assert_not_called()
 
 
-def test_update_applies_patch_with_three_way(tmp_path):
+def test_update_applies_patch(tmp_path):
     project_dir = make_project(tmp_path, commit="abc123")
     patch_content = "some diff content"
 
@@ -99,8 +99,8 @@ def test_update_applies_patch_with_three_way(tmp_path):
         patch("rebake.update.detect_new_variables", return_value={}),
         patch("rebake.update.prompt_new_variables"),
         patch("rebake.update.generate_diff", return_value=patch_content),
-        patch("rebake.update.apply_patch", return_value=True) as mock_apply,
+        patch("rebake.update.apply_patch", return_value=(True, "")) as mock_apply,
     ):
         run_update(project_dir)
 
-    mock_apply.assert_called_once_with(patch_content, project_dir, three_way=True)
+    mock_apply.assert_called_once_with(patch_content, project_dir.resolve())

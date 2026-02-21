@@ -24,6 +24,9 @@ def run_update(project_dir: Path = Path(".")) -> None:
 
     Raises RuntimeError when the working tree has uncommitted changes.
     """
+    # Resolve to absolute path before any subprocess/cookiecutter calls that may change CWD
+    project_dir = project_dir.resolve()
+
     if not is_working_tree_clean(project_dir):
         raise RuntimeError("Project has uncommitted changes. Please commit or stash them before updating.")
 
@@ -58,21 +61,30 @@ def run_update(project_dir: Path = Path(".")) -> None:
         new_output = tmp / "new_output"
         old_output.mkdir()
         new_output.mkdir()
-        render_template(old_template_dir, merged_context, old_output)
-        render_template(new_template_dir, merged_context, new_output)
+        old_rendered = render_template(old_template_dir, merged_context, old_output)
+        new_rendered = render_template(new_template_dir, merged_context, new_output)
 
-        patch = generate_diff(old_output, new_output)
+        patch = generate_diff(old_rendered, new_rendered)
 
     if patch:
-        success = apply_patch(patch, project_dir, three_way=True)
+        success, stderr = apply_patch(patch, project_dir)
         if not success:
-            console.print("[red]Patch could not be applied cleanly.[/red] Resolve conflicts manually.")
+            rej_files = sorted(project_dir.rglob("*.rej"))
+            console.print("[yellow]![/yellow] Some hunks could not be applied.")
+            if rej_files:
+                console.print("Resolve conflicts and delete the following [bold].rej[/bold] files:")
+                for f in rej_files:
+                    console.print(f"  [bold]{f.relative_to(project_dir)}[/bold]")
+            if stderr:
+                console.print(stderr)
         else:
             console.print("[green]✓[/green] Patch applied successfully.")
     else:
         console.print("[green]✓[/green] No changes to apply.")
 
-    # Persist the new commit hash and any newly prompted variables
+    # Persist the new commit hash and any newly prompted variables.
+    # Save even on partial apply so the next run starts from the new baseline
+    # rather than re-applying the same diff.
     config.commit = new_commit
     config.context["cookiecutter"] = merged_context
     config.save(project_dir)
