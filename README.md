@@ -4,7 +4,7 @@ A spiritual successor to [cruft](https://github.com/cruft/cruft) for managing [c
 
 rebake improves on cruft in two key areas:
 
-1. **Better conflict UX** — uses `git apply -3` to produce inline conflict markers instead of `.rej` files
+1. **Partial apply on conflict** — uses `git apply --reject` to apply all applicable hunks; only the unresolvable portions are saved as `.rej` files
 2. **New variable detection** — prompts for variables added to the template since the project was last updated
 
 ## Requirements
@@ -52,7 +52,7 @@ rebake will:
 1. Abort if there are uncommitted changes (commit or stash first)
 2. Detect new variables added to the template and prompt for their values
 3. Generate a diff between the old and new rendered templates
-4. Apply the diff with `git apply -3` — conflicts appear as inline markers
+4. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution
 5. Update `.cruft.json` with the new commit hash and any newly added variables
 
 ## Migrating from cruft
