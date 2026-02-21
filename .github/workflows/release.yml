@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/rebake
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Set up the latest version of uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+    - name: Build
+      run: uv build
+
+    - name: upload dists
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-dists
+        path: dist/
+
+    - name: Publish package distributions to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
