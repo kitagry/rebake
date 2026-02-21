@@ -41,4 +41,4 @@ class CruftConfig:
             data["checkout"] = self.checkout
         if self.skip:
             data["skip"] = self.skip
-        cruft_file.write_text(json.dumps(data, indent=2) + "\n")
+        cruft_file.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")

@@ -72,3 +72,16 @@ def test_save_omits_none_checkout(tmp_path):
     raw = json.loads((tmp_path / ".cruft.json").read_text())
     assert "checkout" not in raw
     assert "skip" not in raw
+
+
+def test_save_japanese_text_not_escaped(tmp_path):
+    config = CruftConfig(
+        template="https://github.com/owner/template",
+        commit="abc123",
+        context={"cookiecutter": {"project_name": "テストプロジェクト"}},
+    )
+    config.save(tmp_path)
+
+    raw_text = (tmp_path / ".cruft.json").read_text()
+    assert "テストプロジェクト" in raw_text
+    assert "\\u" not in raw_text
