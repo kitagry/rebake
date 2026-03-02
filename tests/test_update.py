@@ -104,3 +104,22 @@ def test_update_applies_patch(tmp_path):
         run_update(project_dir)
 
     mock_apply.assert_called_once_with(patch_content, project_dir.resolve())
+
+
+def test_update_passes_allow_untracked_files_flag_to_git_check(tmp_path):
+    """The allow_untracked_files flag must be forwarded to is_working_tree_clean."""
+    project_dir = make_project(tmp_path)
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True) as mock_clean,
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+    ):
+        run_update(project_dir, allow_untracked_files=True)
+
+    mock_clean.assert_called_once_with(project_dir.resolve(), allow_untracked_files=True)
