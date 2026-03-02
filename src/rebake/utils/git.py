@@ -91,8 +91,8 @@ def _git_root(project_dir: Path) -> Path:
     return Path(result.stdout.strip())
 
 
-def apply_patch(patch: str, project_dir: Path = Path(".")) -> tuple[bool, str]:
-    """Apply a patch string via git apply.
+def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]:
+    """Apply a patch via git apply.
 
     Runs git apply from the git root with --directory so that patch paths
     (relative to the rendered template project) resolve correctly even when
@@ -113,7 +113,6 @@ def apply_patch(patch: str, project_dir: Path = Path(".")) -> tuple[bool, str]:
         [*cmd_base, "-"],
         input=patch,
         capture_output=True,
-        text=True,
         cwd=str(git_root),
     )
     if result.returncode == 0:
@@ -124,10 +123,9 @@ def apply_patch(patch: str, project_dir: Path = Path(".")) -> tuple[bool, str]:
         [*cmd_base, "--reject", "-"],
         input=patch,
         capture_output=True,
-        text=True,
         cwd=str(git_root),
     )
-    return False, result.stderr
+    return False, result.stderr.decode(errors="replace")
 
 
 def _common_ancestor(path1: Path, path2: Path) -> Path | None:
@@ -143,8 +141,12 @@ def _common_ancestor(path1: Path, path2: Path) -> Path | None:
     return Path(*common_parts)
 
 
-def generate_diff(old_dir: Path, new_dir: Path) -> str:
-    """Return a unified diff between two directories as a patch string."""
+def generate_diff(old_dir: Path, new_dir: Path) -> bytes:
+    """Return a unified diff between two directories as a patch (bytes).
+
+    Using bytes avoids UnicodeDecodeError when diffed directories contain
+    binary files or files with non-UTF-8 content.
+    """
     old_real = old_dir.resolve()
     new_real = new_dir.resolve()
 
@@ -156,21 +158,19 @@ def generate_diff(old_dir: Path, new_dir: Path) -> str:
         result = subprocess.run(
             ["git", "diff", "--no-index", "--binary", old_rel, new_rel],
             capture_output=True,
-            text=True,
             cwd=str(common),
         )
         raw = result.stdout
-        old_prefix = old_rel + "/"
-        new_prefix = new_rel + "/"
+        old_prefix = (old_rel + "/").encode()
+        new_prefix = (new_rel + "/").encode()
     else:
         result = subprocess.run(
             ["git", "diff", "--no-index", "--binary", str(old_real), str(new_real)],
             capture_output=True,
-            text=True,
         )
         raw = result.stdout
-        old_prefix = str(old_real) + "/"
-        new_prefix = str(new_real) + "/"
+        old_prefix = (str(old_real) + "/").encode()
+        new_prefix = (str(new_real) + "/").encode()
 
     # git diff exits with 1 when there are differences; that is expected
-    return raw.replace(old_prefix, "").replace(new_prefix, "")
+    return raw.replace(old_prefix, b"").replace(new_prefix, b"")
