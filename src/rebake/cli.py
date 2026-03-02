@@ -32,6 +32,25 @@ def check(
 
 
 @app.command()
+def reparametrize(
+    project_dir: Path = typer.Argument(Path("."), help="Path to the project directory"),
+    allow_untracked_files: bool = typer.Option(
+        False,
+        "--allow-untracked-files",
+        help="Allow reparametrize even if there are untracked files in the git repository (but no other changes)",
+    ),
+) -> None:
+    """Change template variables and re-apply the diff."""
+    from rebake.reparametrize import run_reparametrize
+
+    try:
+        run_reparametrize(project_dir, allow_untracked_files=allow_untracked_files)
+    except Exception as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def update(
     project_dir: Path = typer.Argument(Path("."), help="Path to the project directory"),
     allow_untracked_files: bool = typer.Option(

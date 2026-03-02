@@ -29,3 +29,8 @@ def cookiecutter_prompt(new_vars: dict[str, Any]) -> dict[str, Any]:
 def prompt_new_variables(new_vars: dict[str, Any]) -> dict[str, Any]:
     """Interactively ask the user for values of newly added template variables."""
     return cookiecutter_prompt(new_vars)
+
+
+def prompt_all_variables(current_context: dict[str, Any]) -> dict[str, Any]:
+    """Display all variables with current values as defaults; Enter to keep."""
+    return cookiecutter_prompt(current_context)
