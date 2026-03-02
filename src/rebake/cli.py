@@ -34,12 +34,18 @@ def check(
 @app.command()
 def update(
     project_dir: Path = typer.Argument(Path("."), help="Path to the project directory"),
+    allow_untracked_files: bool = typer.Option(
+        False,
+        "--allow-untracked-files",
+        help="Allow the project's cruft to be updated if there are untracked files in the git repository"
+        " (but no other changes)",
+    ),
 ) -> None:
     """Apply the latest template changes to the project."""
     from rebake.update import run_update
 
     try:
-        run_update(project_dir)
+        run_update(project_dir, allow_untracked_files=allow_untracked_files)
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)

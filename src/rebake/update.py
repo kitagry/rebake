@@ -19,7 +19,7 @@ from rebake.utils.variables import detect_new_variables, prompt_new_variables
 console = Console()
 
 
-def run_update(project_dir: Path = Path(".")) -> None:
+def run_update(project_dir: Path = Path("."), *, allow_untracked_files: bool = False) -> None:
     """Apply the latest template changes to the project.
 
     Raises RuntimeError when the working tree has uncommitted changes.
@@ -27,7 +27,7 @@ def run_update(project_dir: Path = Path(".")) -> None:
     # Resolve to absolute path before any subprocess/cookiecutter calls that may change CWD
     project_dir = project_dir.resolve()
 
-    if not is_working_tree_clean(project_dir):
+    if not is_working_tree_clean(project_dir, allow_untracked_files=allow_untracked_files):
         raise RuntimeError("Project has uncommitted changes. Please commit or stash them before updating.")
 
     config = CruftConfig.load(project_dir)

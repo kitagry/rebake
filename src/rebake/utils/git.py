@@ -63,7 +63,7 @@ def clone_at_commit(template_url: str, commit: str, dest: Path) -> None:
     )
 
 
-def is_working_tree_clean(project_dir: Path = Path(".")) -> bool:
+def is_working_tree_clean(project_dir: Path = Path("."), *, allow_untracked_files: bool = False) -> bool:
     """Return True when there are no uncommitted changes in the working tree."""
     result = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -72,7 +72,11 @@ def is_working_tree_clean(project_dir: Path = Path(".")) -> bool:
         check=True,
         cwd=str(project_dir),
     )
-    return result.stdout.strip() == ""
+    lines = result.stdout.splitlines()
+    if allow_untracked_files:
+        # Untracked files are prefixed with "??" in porcelain output
+        lines = [line for line in lines if not line.startswith("??")]
+    return len(lines) == 0
 
 
 def _git_root(project_dir: Path) -> Path:
