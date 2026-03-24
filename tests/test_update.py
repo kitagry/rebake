@@ -123,3 +123,39 @@ def test_update_passes_allow_untracked_files_flag_to_git_check(tmp_path):
         run_update(project_dir, allow_untracked_files=True)
 
     mock_clean.assert_called_once_with(project_dir.resolve(), allow_untracked_files=True)
+
+
+def test_update_quiet_mode_raises_when_new_variables(tmp_path):
+    """In quiet mode, raise RuntimeError when new variables are detected."""
+    project_dir = make_project(tmp_path)
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={"license": "MIT"}),
+        patch("rebake.update.prompt_new_variables") as mock_prompt,
+        patch("rebake.update.generate_diff", return_value=""),
+    ):
+        with pytest.raises(RuntimeError, match="license"):
+            run_update(project_dir, quiet=True)
+
+    mock_prompt.assert_not_called()
+
+
+def test_update_quiet_mode_succeeds_when_no_new_variables(tmp_path):
+    """In quiet mode, succeed normally when there are no new variables."""
+    project_dir = make_project(tmp_path)
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+    ):
+        run_update(project_dir, quiet=True)
