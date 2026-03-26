@@ -56,7 +56,7 @@ Exit codes:
 Apply the latest template changes to the project.
 
 ```bash
-rebake update [PROJECT_DIR]
+rebake update [PROJECT_DIR] [OPTIONS]
 ```
 
 rebake will:
@@ -65,6 +65,24 @@ rebake will:
 3. Generate a diff between the old and new rendered templates
 4. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution
 5. Update `.cruft.json` with the new commit hash and any newly added variables
+
+#### Options
+
+| Option | Description |
+|---|---|
+| `--allow-untracked-files` | Allow update even if untracked files exist (no other changes) |
+| `--quiet` | Disable interactive prompts; exit 1 if new variables are found without a supplied value |
+
+#### Non-interactive usage (e.g. from an LLM agent)
+
+`--quiet` is designed for automated workflows where interactive prompts are not possible.
+
+```bash
+# Attempt update non-interactively; exit 1 if new variables need values
+rebake update --quiet
+```
+
+When `--quiet` is used and new variables are found, rebake prints each variable name and its default value to stderr, then exits with code 1.
 
 ## Migrating from cruft
 
