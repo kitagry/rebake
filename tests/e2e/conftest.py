@@ -30,7 +30,7 @@ def _head_commit(repo: Path) -> str:
 def template_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "template"
     shutil.copytree(FIXTURES_DIR / "simple_template", repo)
-    _git(["init"], repo)
+    _git(["init", "-b", "main"], repo)
     _git(["config", "user.email", "test@test.com"], repo)
     _git(["config", "user.name", "Test"], repo)
     _git(["add", "."], repo)

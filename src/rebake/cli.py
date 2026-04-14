@@ -13,6 +13,23 @@ err_console = Console(stderr=True)
 
 
 @app.command()
+def create(
+    template: str = typer.Argument(..., help="URL or path to the cookiecutter template"),
+    output_dir: Path = typer.Option(Path("."), "--output-dir", "-o", help="Directory to create the project in"),
+    checkout: str | None = typer.Option(None, "--checkout", help="Branch, tag or commit to use"),
+) -> None:
+    """Create a new project from a cookiecutter template."""
+    from rebake.create import run_create
+
+    try:
+        project = run_create(template, output_dir=output_dir, checkout=checkout)
+        console.print(f"[green]✓[/green] Project created at [bold]{project}[/bold]")
+    except Exception as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def check(
     project_dir: Path = typer.Argument(Path("."), help="Path to the project directory"),
 ) -> None:
