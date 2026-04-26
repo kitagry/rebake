@@ -76,12 +76,17 @@ def update(
         help="Allow the project's cruft to be updated if there are untracked files in the git repository"
         " (but no other changes)",
     ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        help="Do not prompt for new variables; exit 1 if any new variables are found without a supplied value.",
+    ),
 ) -> None:
     """Apply the latest template changes to the project."""
     from rebake.update import run_update
 
     try:
-        run_update(project_dir, allow_untracked_files=allow_untracked_files)
+        run_update(project_dir, allow_untracked_files=allow_untracked_files, quiet=quiet)
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)

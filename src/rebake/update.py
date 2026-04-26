@@ -19,10 +19,16 @@ from rebake.utils.variables import detect_new_variables, prompt_new_variables
 console = Console()
 
 
-def run_update(project_dir: Path = Path("."), *, allow_untracked_files: bool = False) -> None:
+def run_update(
+    project_dir: Path = Path("."),
+    *,
+    allow_untracked_files: bool = False,
+    quiet: bool = False,
+) -> None:
     """Apply the latest template changes to the project.
 
     Raises RuntimeError when the working tree has uncommitted changes.
+    Raises RuntimeError in quiet mode when new template variables are found.
     """
     # Resolve to absolute path before any subprocess/cookiecutter calls that may change CWD
     project_dir = project_dir.resolve()
@@ -49,12 +55,16 @@ def run_update(project_dir: Path = Path("."), *, allow_untracked_files: bool = F
 
         # Detect variables added in the new template and prompt the user
         new_vars = detect_new_variables(new_template_dir, old_context)
-        extra_context = {}
+        prompted_context: dict[str, str] = {}
         if new_vars:
+            if quiet:
+                lines = "\n".join(
+                    f"  {k}: {v}" if isinstance(v, str) else f"  {k}: (default: {v!r})" for k, v in new_vars.items()
+                )
+                raise RuntimeError(f"New template variables require values:\n{lines}")
             console.print("[yellow]New template variables detected. Please provide values:[/yellow]")
-            extra_context = prompt_new_variables(new_vars)
-
-        merged_context = {**old_context, **extra_context}
+            prompted_context = prompt_new_variables(new_vars)
+        merged_context = {**old_context, **prompted_context}
 
         # Render both template versions with the merged context
         old_output = tmp / "old_output"
