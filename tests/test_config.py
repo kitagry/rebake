@@ -140,3 +140,61 @@ def test_save_japanese_text_not_escaped(tmp_path):
     raw_text = (tmp_path / "rebake.yaml").read_text()
     assert "テストプロジェクト" in raw_text
     assert "\\u" not in raw_text
+
+
+def test_load_with_hooks_from_rebake_yaml(tmp_path):
+    data = {
+        "template": "https://github.com/owner/template",
+        "commit": "abc123",
+        "context": {"cookiecutter": {}},
+        "hooks": {
+            "pre-update": ["make lint"],
+            "post-update": ["make fmt", "make test"],
+        },
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+
+    config = CruftConfig.load(tmp_path)
+
+    assert config.hooks == {
+        "pre-update": ["make lint"],
+        "post-update": ["make fmt", "make test"],
+    }
+
+
+def test_load_hooks_defaults_to_empty(tmp_path):
+    data = {
+        "template": "https://github.com/owner/template",
+        "commit": "abc123",
+        "context": {"cookiecutter": {}},
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+
+    config = CruftConfig.load(tmp_path)
+
+    assert config.hooks == {}
+
+
+def test_save_and_reload_with_hooks(tmp_path):
+    config = CruftConfig(
+        template="https://github.com/owner/template",
+        commit="abc123",
+        context={"cookiecutter": {}},
+        hooks={"post-update": ["go generate ./..."]},
+    )
+    config.save(tmp_path)
+
+    loaded = CruftConfig.load(tmp_path)
+    assert loaded.hooks == {"post-update": ["go generate ./..."]}
+
+
+def test_save_omits_empty_hooks(tmp_path):
+    config = CruftConfig(
+        template="https://github.com/owner/template",
+        commit="abc123",
+        context={"cookiecutter": {}},
+    )
+    config.save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert "hooks" not in raw
