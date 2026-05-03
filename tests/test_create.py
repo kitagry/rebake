@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 from unittest.mock import patch
+
+import yaml
 
 from rebake.create import run_create
 
 
-def test_create_renders_template_and_writes_cruft_json(tmp_path):
+def test_create_renders_template_and_writes_rebake_yaml(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     rendered_project = output_dir / "my-project"
@@ -22,9 +23,9 @@ def test_create_renders_template_and_writes_cruft_json(tmp_path):
         run_create("https://github.com/owner/template", output_dir=output_dir)
 
     mock_cc.assert_called_once()
-    cruft_json = rendered_project / ".cruft.json"
-    assert cruft_json.exists()
-    data = json.loads(cruft_json.read_text())
+    rebake_yaml = rendered_project / "rebake.yaml"
+    assert rebake_yaml.exists()
+    data = yaml.safe_load(rebake_yaml.read_text())
     assert data["template"] == "https://github.com/owner/template"
     assert data["commit"] == "abc123"
     assert "cookiecutter" in data["context"]
@@ -46,8 +47,7 @@ def test_create_uses_checkout(tmp_path):
         run_create("https://github.com/owner/template", output_dir=output_dir, checkout="v1.0")
 
     mock_commit.assert_called_once_with("https://github.com/owner/template", checkout="v1.0")
-    cruft_json = rendered_project / ".cruft.json"
-    data = json.loads(cruft_json.read_text())
+    data = yaml.safe_load((rendered_project / "rebake.yaml").read_text())
     assert data["checkout"] == "v1.0"
 
 
@@ -66,7 +66,7 @@ def test_create_saves_context_from_cookiecutter(tmp_path):
     ):
         run_create("https://github.com/owner/template", output_dir=output_dir)
 
-    data = json.loads((rendered_project / ".cruft.json").read_text())
+    data = yaml.safe_load((rendered_project / "rebake.yaml").read_text())
     assert data["context"]["cookiecutter"]["project_name"] == "my-project"
     assert data["context"]["cookiecutter"]["author"] == "me"
 
@@ -86,5 +86,5 @@ def test_create_without_checkout_omits_field(tmp_path):
     ):
         run_create("https://github.com/owner/template", output_dir=output_dir)
 
-    data = json.loads((rendered_project / ".cruft.json").read_text())
+    data = yaml.safe_load((rendered_project / "rebake.yaml").read_text())
     assert "checkout" not in data
