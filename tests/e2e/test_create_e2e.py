@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from rebake.cli import app
@@ -27,7 +27,7 @@ def _make_template_repo(tmp_path: Path) -> Path:
 
 
 @pytest.mark.e2e
-def test_create_generates_project_and_cruft_json(tmp_path: Path) -> None:
+def test_create_generates_project_and_rebake_yaml(tmp_path: Path) -> None:
     template_repo = _make_template_repo(tmp_path)
     output_dir = tmp_path / "output"
     output_dir.mkdir()
@@ -42,9 +42,9 @@ def test_create_generates_project_and_cruft_json(tmp_path: Path) -> None:
     project_dir = output_dir / "my-project"
     assert project_dir.is_dir()
 
-    cruft_json = project_dir / ".cruft.json"
-    assert cruft_json.exists()
-    data = json.loads(cruft_json.read_text())
+    rebake_yaml = project_dir / "rebake.yaml"
+    assert rebake_yaml.exists()
+    data = yaml.safe_load(rebake_yaml.read_text())
     assert data["template"] == str(template_repo)
     assert "commit" in data
     assert len(data["commit"]) == 40  # SHA-1 full hash
@@ -64,5 +64,5 @@ def test_create_with_checkout(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    data = json.loads((output_dir / "my-project" / ".cruft.json").read_text())
+    data = yaml.safe_load((output_dir / "my-project" / "rebake.yaml").read_text())
     assert data["checkout"] == "main"

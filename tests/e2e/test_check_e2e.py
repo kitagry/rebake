@@ -29,6 +29,6 @@ def test_check_outdated(project_dir: Path, template_repo: Path) -> None:
 
 
 @pytest.mark.e2e
-def test_check_missing_cruft_json(tmp_path: Path) -> None:
+def test_check_missing_config_file(tmp_path: Path) -> None:
     result = runner.invoke(app, ["check", str(tmp_path)])
     assert result.exit_code == 2

@@ -13,7 +13,7 @@ runner = CliRunner()
 
 @pytest.mark.e2e
 def test_reparametrize_no_changes(project_dir: Path) -> None:
-    """変数を変更しない場合は early exit する。"""
+    """Should exit early when no variables are changed."""
     with patch("rebake.reparametrize.prompt_all_variables", return_value={"project_name": "my-project"}):
         result = runner.invoke(app, ["reparametrize", str(project_dir)])
 
@@ -23,7 +23,7 @@ def test_reparametrize_no_changes(project_dir: Path) -> None:
 
 @pytest.mark.e2e
 def test_reparametrize_updates_file_content(project_dir: Path) -> None:
-    """project_name を変更するとファイル内容が更新される。"""
+    """Should update file content when project_name is changed."""
     with patch(
         "rebake.reparametrize.prompt_all_variables",
         return_value={"project_name": "new-project"},
@@ -36,8 +36,8 @@ def test_reparametrize_updates_file_content(project_dir: Path) -> None:
 
 
 @pytest.mark.e2e
-def test_reparametrize_updates_cruft_json(project_dir: Path) -> None:
-    """変更後に .cruft.json の context が更新される。"""
+def test_reparametrize_updates_config(project_dir: Path) -> None:
+    """Should update context in rebake.yaml after reparametrize."""
     with patch(
         "rebake.reparametrize.prompt_all_variables",
         return_value={"project_name": "new-project"},
