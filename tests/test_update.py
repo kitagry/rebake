@@ -159,3 +159,186 @@ def test_update_quiet_mode_succeeds_when_no_new_variables(tmp_path):
         patch("rebake.update.apply_patch", return_value=(True, "")),
     ):
         run_update(project_dir, quiet=True)
+
+
+def _patch_update_internals(**overrides):
+    defaults = dict(
+        is_working_tree_clean=True,
+        get_template_head_commit="def456",
+        clone_at_commit=None,
+        render_template=Path("/tmp/rendered"),
+        detect_new_variables={},
+        prompt_new_variables=None,
+        generate_diff="",
+        apply_patch=(True, ""),
+    )
+    defaults.update(overrides)
+    return defaults
+
+
+def test_update_runs_pre_update_hook(tmp_path):
+    project_dir = make_project(tmp_path)
+    (tmp_path / "rebake.yaml").write_text(
+        __import__("yaml").dump(
+            {
+                "template": "https://github.com/owner/template",
+                "commit": "abc123",
+                "context": {"cookiecutter": {"project_name": "my-project"}},
+                "hooks": {"pre-update": ["echo pre"]},
+            }
+        )
+    )
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+        patch("rebake.update.run_hooks") as mock_hooks,
+    ):
+        run_update(project_dir)
+
+    calls = [c.args[0] for c in mock_hooks.call_args_list]
+    assert "pre-update" in calls
+
+
+def test_update_runs_post_update_hook(tmp_path):
+    project_dir = make_project(tmp_path)
+    (tmp_path / "rebake.yaml").write_text(
+        __import__("yaml").dump(
+            {
+                "template": "https://github.com/owner/template",
+                "commit": "abc123",
+                "context": {"cookiecutter": {"project_name": "my-project"}},
+                "hooks": {"post-update": ["echo post"]},
+            }
+        )
+    )
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+        patch("rebake.update.run_hooks") as mock_hooks,
+    ):
+        run_update(project_dir)
+
+    calls = [c.args[0] for c in mock_hooks.call_args_list]
+    assert "post-update" in calls
+
+
+def test_update_pre_hook_runs_before_patch(tmp_path):
+    """pre-update hook must be called before apply_patch."""
+    project_dir = make_project(tmp_path)
+    call_order = []
+
+    def record_hook(event, *args, **kwargs):
+        call_order.append(f"hook:{event}")
+
+    def record_apply(patch_content, path):
+        call_order.append("apply_patch")
+        return (True, "")
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value="diff content"),
+        patch("rebake.update.apply_patch", side_effect=record_apply),
+        patch("rebake.update.run_hooks", side_effect=record_hook),
+    ):
+        run_update(project_dir)
+
+    pre_idx = call_order.index("hook:pre-update")
+    apply_idx = call_order.index("apply_patch")
+    assert pre_idx < apply_idx
+
+
+def test_update_post_hook_runs_after_config_save(tmp_path):
+    """post-update hook must be called after config.save."""
+    project_dir = make_project(tmp_path)
+    call_order = []
+
+    def record_save(path):
+        call_order.append("save")
+
+    def record_hook(event, *args, **kwargs):
+        call_order.append(f"hook:{event}")
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+        patch("rebake.config.CruftConfig.save", side_effect=record_save),
+        patch("rebake.update.run_hooks", side_effect=record_hook),
+    ):
+        run_update(project_dir)
+
+    save_idx = call_order.index("save")
+    post_idx = call_order.index("hook:post-update")
+    assert save_idx < post_idx
+
+
+def test_update_aborts_if_pre_hook_fails(tmp_path):
+    project_dir = make_project(tmp_path)
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value="diff"),
+        patch("rebake.update.apply_patch", return_value=(True, "")) as mock_apply,
+        patch(
+            "rebake.update.run_hooks",
+            side_effect=lambda event, *a, **kw: (
+                (_ for _ in ()).throw(RuntimeError("hook failed")) if event == "pre-update" else None
+            ),
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="hook failed"):
+            run_update(project_dir)
+
+    mock_apply.assert_not_called()
+
+
+def test_update_aborts_if_post_hook_fails(tmp_path):
+    project_dir = make_project(tmp_path)
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+        patch(
+            "rebake.update.run_hooks",
+            side_effect=lambda event, *a, **kw: (
+                (_ for _ in ()).throw(RuntimeError("post hook failed")) if event == "post-update" else None
+            ),
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="post hook failed"):
+            run_update(project_dir)

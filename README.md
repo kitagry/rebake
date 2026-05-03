@@ -61,10 +61,12 @@ rebake update [PROJECT_DIR] [OPTIONS]
 
 rebake will:
 1. Abort if there are uncommitted changes (commit or stash first)
-2. Detect new variables added to the template and prompt for their values
-3. Generate a diff between the old and new rendered templates
-4. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution
-5. Update `.cruft.json` with the new commit hash and any newly added variables
+2. Run `pre-update` hooks (if defined) — abort if any hook fails
+3. Detect new variables added to the template and prompt for their values
+4. Generate a diff between the old and new rendered templates
+5. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution
+6. Update `rebake.yaml` with the new commit hash and any newly added variables
+7. Run `post-update` hooks (if defined)
 
 #### Options
 
@@ -72,6 +74,28 @@ rebake will:
 |---|---|
 | `--allow-untracked-files` | Allow update even if untracked files exist (no other changes) |
 | `--quiet` | Disable interactive prompts; exit 1 if new variables are found without a supplied value |
+
+#### Hooks
+
+Define shell commands to run before or after the update in `rebake.yaml`:
+
+```yaml
+hooks:
+  pre-update:
+    - make lint          # runs before the patch is applied; abort on failure
+  post-update:
+    - go generate ./...  # runs after rebake.yaml is saved; abort on failure
+    - make fmt
+```
+
+Hooks run in the project directory with the following environment variables available:
+
+| Variable | Value |
+|---|---|
+| `REBAKE_TEMPLATE` | Template repository URL |
+| `REBAKE_OLD_COMMIT` | Commit hash before the update |
+| `REBAKE_NEW_COMMIT` | Commit hash after the update |
+| `REBAKE_PROJECT_DIR` | Absolute path to the project directory |
 
 #### Non-interactive usage (e.g. from an LLM agent)
 
@@ -98,21 +122,24 @@ rebake check
 rebake update
 ```
 
-## `.cruft.json` format
+## `rebake.yaml` format
 
-```json
-{
-  "template": "https://github.com/owner/template",
-  "commit": "abc123...",
-  "checkout": "main",
-  "context": {
-    "cookiecutter": {
-      "project_name": "my-project",
-      "author": "Jane Doe"
-    }
-  },
-  "skip": ["go.sum", "*.lock"]
-}
+```yaml
+template: https://github.com/owner/template
+commit: abc123...
+checkout: main          # optional: branch/tag/commit to track
+context:
+  cookiecutter:
+    project_name: my-project
+    author: Jane Doe
+skip:                   # optional: file patterns to skip
+  - go.sum
+  - "*.lock"
+hooks:                  # optional: shell commands to run on update
+  pre-update:
+    - make lint
+  post-update:
+    - make fmt
 ```
 
 ## Development

@@ -18,6 +18,7 @@ class CruftConfig:
     context: dict[str, Any]
     checkout: str | None = None
     skip: list[str] = field(default_factory=list)
+    hooks: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, project_dir: Path = Path(".")) -> "CruftConfig":
@@ -37,6 +38,7 @@ class CruftConfig:
             context=data.get("context", {}),
             checkout=data.get("checkout"),
             skip=data.get("skip", []),
+            hooks=data.get("hooks", {}),
         )
 
     def save(self, project_dir: Path = Path(".")) -> None:
@@ -49,6 +51,8 @@ class CruftConfig:
             data["checkout"] = self.checkout
         if self.skip:
             data["skip"] = self.skip
+        if self.hooks:
+            data["hooks"] = self.hooks
 
         rebake_file = project_dir / REBAKE_FILE
         rebake_file.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False))

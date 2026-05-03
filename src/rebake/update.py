@@ -6,6 +6,7 @@ from pathlib import Path
 from rich.console import Console
 
 from rebake.config import CruftConfig
+from rebake.hooks import run_hooks
 from rebake.utils.git import (
     apply_patch,
     clone_at_commit,
@@ -76,6 +77,14 @@ def run_update(
 
         patch = generate_diff(old_rendered, new_rendered)
 
+    hook_env = {
+        "REBAKE_TEMPLATE": config.template,
+        "REBAKE_OLD_COMMIT": old_commit,
+        "REBAKE_NEW_COMMIT": new_commit,
+        "REBAKE_PROJECT_DIR": str(project_dir),
+    }
+    run_hooks("pre-update", project_dir, config.hooks.get("pre-update", []), env=hook_env)
+
     if patch:
         success, stderr = apply_patch(patch, project_dir)
         if not success:
@@ -98,3 +107,5 @@ def run_update(
     config.commit = new_commit
     config.context["cookiecutter"] = merged_context
     config.save(project_dir)
+
+    run_hooks("post-update", project_dir, config.hooks.get("post-update", []), env=hook_env)
