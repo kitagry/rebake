@@ -36,8 +36,8 @@ def test_reparametrize_updates_file_content(project_dir: Path) -> None:
 
 
 @pytest.mark.e2e
-def test_reparametrize_updates_cruft_json(project_dir: Path) -> None:
-    """変更後に .cruft.json の context が更新される。"""
+def test_reparametrize_updates_config(project_dir: Path) -> None:
+    """変更後に rebake.yaml の context が更新される。"""
     with patch(
         "rebake.reparametrize.prompt_all_variables",
         return_value={"project_name": "new-project"},

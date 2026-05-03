@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from cookiecutter.main import cookiecutter
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -52,17 +52,16 @@ def project_dir(tmp_path: Path, template_repo: Path) -> Path:
     )
     project = Path(rendered)
 
-    (project / ".cruft.json").write_text(
-        json.dumps(
+    (project / "rebake.yaml").write_text(
+        yaml.dump(
             {
                 "template": str(template_repo),
                 "commit": commit,
                 "context": {"cookiecutter": {"project_name": "my-project"}},
             },
-            indent=2,
-            ensure_ascii=False,
+            allow_unicode=True,
+            sort_keys=False,
         )
-        + "\n"
     )
 
     _git(["init"], project)
