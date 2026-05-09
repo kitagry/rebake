@@ -74,6 +74,7 @@ rebake will:
 |---|---|
 | `--allow-untracked-files` | Allow update even if untracked files exist (no other changes) |
 | `--quiet` | Disable interactive prompts; exit 1 if new variables are found without a supplied value |
+| `--checkout`, `-c` | Branch, tag or commit to follow |
 
 #### Hooks
 

@@ -81,12 +81,18 @@ def update(
         "--quiet",
         help="Do not prompt for new variables; exit 1 if any new variables are found without a supplied value.",
     ),
+    checkout: str | None = typer.Option(
+        None,
+        "--checkout",
+        "-c",
+        help="Branch, tag or commit to follow.",
+    ),
 ) -> None:
     """Apply the latest template changes to the project."""
     from rebake.update import run_update
 
     try:
-        run_update(project_dir, allow_untracked_files=allow_untracked_files, quiet=quiet)
+        run_update(project_dir, allow_untracked_files=allow_untracked_files, quiet=quiet, checkout=checkout)
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)

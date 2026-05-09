@@ -25,6 +25,7 @@ def run_update(
     *,
     allow_untracked_files: bool = False,
     quiet: bool = False,
+    checkout: str | None = None,
 ) -> None:
     """Apply the latest template changes to the project.
 
@@ -38,6 +39,8 @@ def run_update(
         raise RuntimeError("Project has uncommitted changes. Please commit or stash them before updating.")
 
     config = CruftConfig.load(project_dir)
+    if checkout is not None:
+        config.checkout = checkout
     old_commit = config.commit
     new_commit = get_template_head_commit(config.template, checkout=config.checkout)
 

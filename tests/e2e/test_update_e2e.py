@@ -94,3 +94,27 @@ def test_update_hook_receives_env_vars(project_dir: Path, template_repo: Path) -
     result = runner.invoke(app, ["update", str(project_dir)])
     assert result.exit_code == 0
     assert str(template_repo) in out.read_text()
+
+
+@pytest.mark.e2e
+def test_update_with_checkout_stops_at_midway_commit(project_dir: Path, template_repo: Path) -> None:
+    # commit1: add file1.txt, tag as v1 (midway)
+    (template_repo / "{{cookiecutter.project_name}}" / "file1.txt").write_text("file1\n")
+    subprocess.run(["git", "add", "."], cwd=template_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "add file1.txt"], cwd=template_repo, check=True)
+    subprocess.run(["git", "tag", "v1"], cwd=template_repo, check=True)
+
+    # commit2: add file2.txt (HEAD)
+    (template_repo / "{{cookiecutter.project_name}}" / "file2.txt").write_text("file2\n")
+    subprocess.run(["git", "add", "."], cwd=template_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "add file2.txt"], cwd=template_repo, check=True)
+
+    result = runner.invoke(app, ["update", "--checkout", "v1", str(project_dir)])
+    assert result.exit_code == 0
+    assert (project_dir / "file1.txt").read_text() == "file1\n"
+    assert not (project_dir / "file2.txt").exists()
+
+    import yaml
+
+    config = yaml.safe_load((project_dir / "rebake.yaml").read_text())
+    assert config["checkout"] == "v1"
