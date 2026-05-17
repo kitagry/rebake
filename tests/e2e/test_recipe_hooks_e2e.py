@@ -3,10 +3,6 @@
 Recipe hooks defined in the template's rebake-recipe.yaml are merged into
 the generated project's rebake.yaml.hooks. On update, a 3-way merge keeps
 user additions while bringing in upstream changes.
-
-Most tests are marked xfail(strict=True) until the implementation lands.
-The follow-up PRs in the stack wire the recipe loader, merge utility, and
-create/update plumbing, then remove these xfail markers.
 """
 
 from __future__ import annotations
@@ -21,14 +17,6 @@ from typer.testing import CliRunner
 from rebake.cli import app
 
 runner = CliRunner()
-
-
-# Marker reused on every unimplemented test; the explicit reason makes it
-# easy to grep for when removing in the final integration PR.
-xfail_until_implemented = pytest.mark.xfail(
-    strict=True,
-    reason="recipe hooks not yet wired",
-)
 
 
 def _head_commit(repo: Path) -> str:
@@ -76,7 +64,6 @@ def _set_user_hooks(project_dir: Path, hooks: dict) -> None:
 
 
 @pytest.mark.e2e
-@xfail_until_implemented
 def test_create_merges_recipe_into_hooks(tmp_path: Path, template_repo_with_recipe: Path) -> None:
     """rebake create copies the recipe's hooks into rebake.yaml.hooks verbatim.
 
@@ -146,7 +133,6 @@ def test_create_without_recipe_keeps_hooks_empty(tmp_path: Path, template_repo: 
 
 
 @pytest.mark.e2e
-@xfail_until_implemented
 def test_update_clean_merge_keeps_user_additions(tmp_path: Path, template_repo_with_recipe: Path) -> None:
     """User-added hooks survive update; upstream changes are picked up alongside.
 
@@ -209,7 +195,6 @@ def test_update_clean_merge_keeps_user_additions(tmp_path: Path, template_repo_w
 
 
 @pytest.mark.e2e
-@xfail_until_implemented
 def test_update_clean_merge_picks_up_recipe_additions(tmp_path: Path, template_repo_with_recipe: Path) -> None:
     """A brand-new recipe entry appears in rebake.yaml.hooks after update.
 
@@ -265,7 +250,6 @@ def test_update_clean_merge_picks_up_recipe_additions(tmp_path: Path, template_r
 
 
 @pytest.mark.e2e
-@xfail_until_implemented
 def test_update_conflict_writes_markers_and_skips_patch(tmp_path: Path, template_repo_with_recipe: Path) -> None:
     """When user and template both edit the same hook line, update writes markers
     into rebake.yaml.hooks and skips everything else.
