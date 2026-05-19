@@ -296,6 +296,32 @@ def test_update_post_hook_runs_after_config_save(tmp_path):
     assert save_idx < post_idx
 
 
+def test_update_with_checkout_advances_to_that_ref(tmp_path):
+    """When checkout is given, the project is updated to that ref's commit, not HEAD."""
+    project_dir = make_project(tmp_path)
+    head_ref = "commit1_as_head"
+    midway_ref = "commit2_as_midway"
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", return_value=head_ref) as mock_head,
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+    ):
+        run_update(project_dir, checkout=midway_ref)
+
+    mock_head.assert_called_once_with("https://github.com/owner/template", checkout=midway_ref)
+
+    from rebake.config import CruftConfig
+
+    updated = CruftConfig.load(project_dir)
+    assert updated.checkout == midway_ref
+
+
 def test_update_aborts_if_pre_hook_fails(tmp_path):
     project_dir = make_project(tmp_path)
 
