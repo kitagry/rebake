@@ -89,6 +89,8 @@ hooks:
     - make fmt
 ```
 
+A template author can also seed these hooks once on the template side via `rebake-recipe.yaml` (see [Authoring a template](#authoring-a-template) below). On `rebake update`, recipe-defined hooks are 3-way merged into `rebake.yaml.hooks` so upstream additions appear automatically while project-specific entries are preserved. If both the recipe and the user edit the same lines, update writes git-style conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) directly into `rebake.yaml.hooks`, skips the patch / hook execution, and exits non-zero. Resolve the markers, commit, then re-run `rebake update`.
+
 Hooks run in the project directory with the following environment variables available:
 
 | Variable | Value |
@@ -108,6 +110,25 @@ rebake update --quiet
 ```
 
 When `--quiet` is used and new variables are found, rebake prints each variable name and its default value to stderr, then exits with code 1.
+
+## Authoring a template
+
+Template authors can ship default hooks alongside the template by adding a `rebake-recipe.yaml` file at the template repository root:
+
+```yaml
+# rebake-recipe.yaml (lives in the template repo, not in generated projects)
+hooks:
+  pre-update:
+    - make fmt
+  post-update:
+    - go generate ./...
+```
+
+- On `rebake create`, the recipe's hooks are copied into the generated project's `rebake.yaml.hooks` verbatim.
+- On `rebake update`, the recipe at the new template commit is 3-way merged into `rebake.yaml.hooks` (with the previous commit's recipe as the base). Upstream additions flow through automatically; user-added entries are preserved.
+- Conflicting edits (the recipe and the user changed the same hook line to different values) cause `rebake update` to write git-style conflict markers into `rebake.yaml.hooks` and exit non-zero. The patch and the hook commands themselves are skipped; the user resolves the markers in `rebake.yaml`, commits, then re-runs `rebake update`.
+
+Only `hooks.pre-update` and `hooks.post-update` are recognized today. Templates without a `rebake-recipe.yaml` are unaffected.
 
 ## Migrating from cruft
 

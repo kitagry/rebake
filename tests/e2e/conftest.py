@@ -39,6 +39,18 @@ def template_repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def template_repo_with_recipe(tmp_path: Path) -> Path:
+    repo = tmp_path / "template"
+    shutil.copytree(FIXTURES_DIR / "template_with_recipe", repo)
+    _git(["init", "-b", "main"], repo)
+    _git(["config", "user.email", "test@test.com"], repo)
+    _git(["config", "user.name", "Test"], repo)
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "init"], repo)
+    return repo
+
+
+@pytest.fixture
 def project_dir(tmp_path: Path, template_repo: Path) -> Path:
     commit = _head_commit(template_repo)
 

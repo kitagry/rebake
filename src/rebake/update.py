@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import cast
 
 from rich.console import Console
 
@@ -14,6 +15,7 @@ from rebake.utils.git import (
     get_template_head_commit,
     is_working_tree_clean,
 )
+from rebake.utils.recipe import HookSpec, load_recipe, merge_hooks
 from rebake.utils.template import render_template
 from rebake.utils.variables import detect_new_variables, prompt_new_variables
 
@@ -70,6 +72,36 @@ def run_update(
             prompted_context = prompt_new_variables(new_vars)
         merged_context = {**old_context, **prompted_context}
 
+        # 3-way merge of hooks: base = recipe at old commit, theirs = recipe at
+        # new commit, ours = current rebake.yaml.hooks.
+        base_hooks = load_recipe(old_template_dir).hooks
+        theirs_hooks = load_recipe(new_template_dir).hooks
+        ours_hooks = cast(HookSpec, config.hooks)
+        merge_result = merge_hooks(base=base_hooks, theirs=theirs_hooks, ours=ours_hooks)
+
+        # On conflict, write the marker-laden hooks (and advance commit:) to
+        # rebake.yaml and stop. The patch and hook runs are skipped so the
+        # project state stays at the merge boundary. Bumping commit: makes the
+        # next update a 2-way merge from the user's resolved hooks against an
+        # unchanged theirs — i.e. resolving and re-running picks up cleanly
+        # instead of replaying the same conflict.
+        # TODO: provide a `rebake update --continue` to apply the patch and
+        # run hooks once the user has resolved markers, instead of requiring
+        # a full re-run.
+        if merge_result.has_conflicts:
+            # TODO: replace this cast by aligning CruftConfig.hooks with HookSpec.
+            config.hooks = cast("dict[str, list[str]]", merge_result.hooks)
+            config.commit = new_commit
+            config.context["cookiecutter"] = merged_context
+            config.save(project_dir)
+            events = ", ".join(f"hooks.{c.event}" for c in merge_result.conflicts)
+            console.print(f"[red]✗[/red] Hook merge conflict in [bold]{events}[/bold].")
+            console.print(
+                "Conflict markers were written to [bold]rebake.yaml[/bold]. "
+                "Resolve them, commit, then re-run [bold]rebake update[/bold] to apply the template patch."
+            )
+            raise RuntimeError(f"Hook merge conflict in {events}")
+
         # Render both template versions with the merged context
         old_output = tmp / "old_output"
         new_output = tmp / "new_output"
@@ -79,6 +111,11 @@ def run_update(
         new_rendered = render_template(new_template_dir, merged_context, new_output)
 
         patch = generate_diff(old_rendered, new_rendered)
+
+    # Adopt the merged hooks so both the upcoming hook runs and the saved
+    # rebake.yaml reflect the post-merge state.
+    # TODO: replace this cast by aligning CruftConfig.hooks with HookSpec.
+    config.hooks = cast("dict[str, list[str]]", merge_result.hooks)
 
     hook_env = {
         "REBAKE_TEMPLATE": config.template,
