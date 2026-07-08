@@ -40,7 +40,9 @@ uv add rebake
 
 ### `rebake check`
 
-Check whether the project is up-to-date with its template.
+Check whether the project is up-to-date with its template(s). When a repository
+tracks [multiple templates](#multiple-templates), every one is checked and the
+command reports each; it exits non-zero if any is outdated.
 
 ```bash
 rebake check [PROJECT_DIR]
@@ -96,7 +98,11 @@ Hooks run in the project directory with the following environment variables avai
 | `REBAKE_TEMPLATE` | Template repository URL |
 | `REBAKE_OLD_COMMIT` | Commit hash before the update |
 | `REBAKE_NEW_COMMIT` | Commit hash after the update |
-| `REBAKE_PROJECT_DIR` | Absolute path to the project directory |
+| `REBAKE_PROJECT_DIR` | Absolute path to the repository root |
+| `REBAKE_TARGET_DIR` | Absolute path to this template's target directory (`REBAKE_PROJECT_DIR/<directory>`) |
+
+For multi-template repositories, hooks run once per template link with the
+working directory set to that link's target directory.
 
 #### Non-interactive usage (e.g. from an LLM agent)
 
@@ -108,6 +114,23 @@ rebake update --quiet
 ```
 
 When `--quiet` is used and new variables are found, rebake prints each variable name and its default value to stderr, then exits with code 1.
+
+## Multiple templates
+
+A single repository can track more than one cookiecutter template — for example
+a shared CI/config template at the root plus one language scaffold per
+sub-directory. Each template link (an entry in the `templates:` list) records
+its own `commit` and a `directory` (the sub-path its patches apply to).
+`rebake check` and `rebake update` operate on every link; `update` applies each
+template's diff into its own `directory`.
+
+Every link is self-contained: `context`, `checkout`, `skip` and `hooks` are all
+per-entry, so each template keeps its own variables and hooks.
+
+Add a link by adding an entry to the `templates:` list in `rebake.yaml`. A
+repository stays in the single-template top-level form until it has more than
+one link, at which point `rebake.yaml` uses the `templates:` list form shown
+below.
 
 ## Migrating from cruft
 
@@ -124,6 +147,8 @@ rebake update
 ```
 
 ## `rebake.yaml` format
+
+Single-template form (also reads a legacy `.cruft.json` with the same keys):
 
 ```yaml
 template: https://github.com/owner/template
@@ -142,6 +167,29 @@ hooks:                  # optional: shell commands to run on update
   post-update:
     - make fmt
 ```
+
+Multi-template form (used automatically once a repository has more than one
+template link — see [Multiple templates](#multiple-templates)):
+
+```yaml
+templates:
+  - template: https://github.com/owner/cookiecutter-common
+    commit: aaa111...
+    checkout: main
+    context:
+      cookiecutter:
+        project_name: my-repo
+    # directory defaults to "." (repository root)
+  - template: https://github.com/owner/cookiecutter-go
+    commit: bbb222...
+    directory: api        # this link's patches apply under api/
+    context:
+      cookiecutter:
+        project_name: my-repo
+```
+
+Each entry accepts the same fields as the single-template form, plus
+`directory` (the sub-path the link's patches apply to; defaults to `.`).
 
 ## Development
 

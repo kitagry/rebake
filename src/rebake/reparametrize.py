@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from rebake.config import CruftConfig
+from rebake.config import RebakeConfig
 from rebake.utils.git import (
     apply_patch,
     clone_at_commit,
@@ -28,8 +28,14 @@ def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: b
     if not is_working_tree_clean(project_dir, allow_untracked_files=allow_untracked_files):
         raise RuntimeError("Project has uncommitted changes. Please commit or stash them before reparametrizing.")
 
-    config = CruftConfig.load(project_dir)
-    old_context = config.context.get("cookiecutter", {})
+    config = RebakeConfig.load(project_dir)
+    if len(config.templates) != 1:
+        raise RuntimeError(
+            "reparametrize supports single-template repositories only. "
+            "Edit context values in rebake.yaml directly for multi-template repos."
+        )
+    entry = config.templates[0]
+    old_context = entry.context.get("cookiecutter", {})
 
     console.print("[cyan]Current variables (Enter to keep):[/cyan]")
     new_context = prompt_all_variables(old_context)
@@ -38,11 +44,13 @@ def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: b
         console.print("[green]✓[/green] No changes.")
         return
 
+    target = project_dir / entry.directory
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
 
         template_dir = tmp / "template"
-        clone_at_commit(config.template, config.commit, template_dir)
+        clone_at_commit(entry.template, entry.commit, template_dir)
 
         old_output = tmp / "old"
         new_output = tmp / "new"
@@ -54,9 +62,9 @@ def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: b
         patch = generate_diff(old_rendered, new_rendered)
 
     if patch:
-        success, stderr = apply_patch(patch, project_dir)
+        success, stderr = apply_patch(patch, target)
         if not success:
-            rej_files = sorted(project_dir.rglob("*.rej"))
+            rej_files = sorted(target.rglob("*.rej"))
             console.print("[yellow]![/yellow] Some hunks could not be applied.")
             if rej_files:
                 console.print("Resolve conflicts and delete the following [bold].rej[/bold] files:")
@@ -69,5 +77,5 @@ def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: b
     else:
         console.print("[green]✓[/green] No changes to apply.")
 
-    config.context["cookiecutter"] = new_context
+    entry.context["cookiecutter"] = new_context
     config.save(project_dir)

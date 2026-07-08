@@ -3,7 +3,7 @@ import json
 import pytest
 import yaml
 
-from rebake.config import CruftConfig
+from rebake.config import CruftConfig, RebakeConfig
 
 
 def test_load_basic_from_rebake_yaml(tmp_path):
@@ -198,3 +198,165 @@ def test_save_omits_empty_hooks(tmp_path):
 
     raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
     assert "hooks" not in raw
+
+
+def test_rebake_config_load_multi_form(tmp_path):
+    data = {
+        "templates": [
+            {"template": "https://github.com/owner/common", "commit": "aaa", "context": {"cookiecutter": {}}},
+            {
+                "template": "https://github.com/owner/batch",
+                "commit": "bbb",
+                "context": {"cookiecutter": {}},
+                "directory": "batch",
+            },
+        ]
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+
+    config = RebakeConfig.load(tmp_path)
+
+    assert len(config.templates) == 2
+    assert config.templates[0].template == "https://github.com/owner/common"
+    assert config.templates[0].directory == "."
+    assert config.templates[1].template == "https://github.com/owner/batch"
+    assert config.templates[1].directory == "batch"
+
+
+def test_rebake_config_load_wraps_legacy_single_rebake_yaml(tmp_path):
+    data = {"template": "https://github.com/owner/template", "commit": "abc123", "context": {"cookiecutter": {}}}
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+
+    config = RebakeConfig.load(tmp_path)
+
+    assert len(config.templates) == 1
+    assert config.templates[0].template == "https://github.com/owner/template"
+    assert config.templates[0].directory == "."
+
+
+def test_rebake_config_load_wraps_legacy_cruft_json(tmp_path):
+    data = {"template": "https://github.com/owner/template", "commit": "abc123", "context": {"cookiecutter": {}}}
+    (tmp_path / ".cruft.json").write_text(json.dumps(data))
+
+    config = RebakeConfig.load(tmp_path)
+
+    assert len(config.templates) == 1
+    assert config.templates[0].directory == "."
+
+
+def test_rebake_config_load_cruft_json_null_directory_normalized_to_root(tmp_path):
+    # cruft writes its own (unrelated) `directory` key, commonly as null.
+    data = {
+        "template": "https://github.com/owner/template",
+        "commit": "abc123",
+        "context": {"cookiecutter": {}},
+        "directory": None,
+        "skip": [],
+    }
+    (tmp_path / ".cruft.json").write_text(json.dumps(data))
+
+    entry = RebakeConfig.load(tmp_path).templates[0]
+
+    assert entry.directory == "."
+    # must be a valid path component (regression: `project_dir / None` raised TypeError)
+    assert tmp_path / entry.directory == tmp_path
+
+
+def test_rebake_config_load_unrecognized_schema_raises(tmp_path):
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"unexpected": "shape"}))
+
+    with pytest.raises(ValueError):
+        RebakeConfig.load(tmp_path)
+
+
+def test_rebake_config_save_single_entry_uses_legacy_top_level_form(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+        ]
+    )
+    config.save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert "templates" not in raw
+    assert raw["template"] == "https://github.com/owner/template"
+
+
+def test_rebake_config_save_multi_entry_uses_templates_list(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            CruftConfig(
+                template="https://github.com/owner/batch",
+                commit="bbb",
+                context={"cookiecutter": {}},
+                directory="batch",
+            ),
+        ]
+    )
+    config.save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert [entry["template"] for entry in raw["templates"]] == [
+        "https://github.com/owner/common",
+        "https://github.com/owner/batch",
+    ]
+    # directory "." is omitted, non-default is kept
+    assert "directory" not in raw["templates"][0]
+    assert raw["templates"][1]["directory"] == "batch"
+
+
+def test_rebake_config_save_and_reload_multi(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            CruftConfig(
+                template="https://github.com/owner/batch",
+                commit="bbb",
+                context={"cookiecutter": {"project_name": "x"}},
+                checkout="main",
+                directory="batch",
+                hooks={"post-update": ["make fmt"]},
+            ),
+        ]
+    )
+    config.save(tmp_path)
+
+    loaded = RebakeConfig.load(tmp_path)
+    assert len(loaded.templates) == 2
+    assert loaded.templates[1].checkout == "main"
+    assert loaded.templates[1].directory == "batch"
+    assert loaded.templates[1].hooks == {"post-update": ["make fmt"]}
+
+
+def test_rebake_config_save_multi_deletes_cruft_json(tmp_path):
+    (tmp_path / ".cruft.json").write_text(json.dumps({"template": "x", "commit": "y", "context": {}}))
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            CruftConfig(template="https://github.com/owner/batch", commit="bbb", context={"cookiecutter": {}}),
+        ]
+    )
+    config.save(tmp_path)
+
+    assert not (tmp_path / ".cruft.json").exists()
+
+
+def test_rebake_config_save_empty_raises(tmp_path):
+    config = RebakeConfig(templates=[])
+    with pytest.raises(ValueError):
+        config.save(tmp_path)
+
+
+def test_cruft_config_load_returns_first_entry_of_multi(tmp_path):
+    data = {
+        "templates": [
+            {"template": "https://github.com/owner/common", "commit": "aaa", "context": {"cookiecutter": {}}},
+            {"template": "https://github.com/owner/batch", "commit": "bbb", "context": {"cookiecutter": {}}},
+        ]
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+
+    config = CruftConfig.load(tmp_path)
+
+    assert config.template == "https://github.com/owner/common"

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from rebake.config import CruftConfig
+from rebake.config import CruftConfig, RebakeConfig
 from rebake.hooks import run_hooks
 from rebake.utils.git import (
     apply_patch,
@@ -27,7 +27,7 @@ def run_update(
     quiet: bool = False,
     checkout: str | None = None,
 ) -> None:
-    """Apply the latest template changes to the project.
+    """Apply the latest template changes to every registered template link.
 
     Raises RuntimeError when the working tree has uncommitted changes.
     Raises RuntimeError in quiet mode when new template variables are found.
@@ -38,15 +38,41 @@ def run_update(
     if not is_working_tree_clean(project_dir, allow_untracked_files=allow_untracked_files):
         raise RuntimeError("Project has uncommitted changes. Please commit or stash them before updating.")
 
-    config = CruftConfig.load(project_dir)
+    config = RebakeConfig.load(project_dir)
+
+    if checkout is not None and len(config.templates) > 1:
+        raise RuntimeError(
+            "--checkout is ambiguous for a multi-template repository. Set `checkout:` per entry in rebake.yaml instead."
+        )
+
+    for entry in config.templates:
+        _update_entry(entry, project_dir, config, quiet=quiet, checkout=checkout)
+
+
+def _update_entry(
+    entry: CruftConfig,
+    project_dir: Path,
+    config: RebakeConfig,
+    *,
+    quiet: bool,
+    checkout: str | None,
+) -> None:
     if checkout is not None:
-        config.checkout = checkout
-    old_commit = config.commit
-    new_commit = get_template_head_commit(config.template, checkout=config.checkout)
+        entry.checkout = checkout
 
-    console.print(f"Updating from [cyan]{old_commit[:8]}[/cyan] → [cyan]{new_commit[:8]}[/cyan]")
+    target = project_dir / entry.directory
+    # A hand-added entry may reference a directory that does not exist yet; create
+    # it so apply_patch's `git rev-parse` (run from target) does not fail obscurely.
+    target.mkdir(parents=True, exist_ok=True)
+    old_commit = entry.commit
+    new_commit = get_template_head_commit(entry.template, checkout=entry.checkout)
 
-    old_context = config.context.get("cookiecutter", {})
+    console.print(
+        f"Updating [bold]{entry.template}[/bold] ({entry.directory}): "
+        f"[cyan]{old_commit[:8]}[/cyan] → [cyan]{new_commit[:8]}[/cyan]"
+    )
+
+    old_context = entry.context.get("cookiecutter", {})
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -54,8 +80,8 @@ def run_update(
         # Clone template at old and new commits to compute the diff
         old_template_dir = tmp / "old_template"
         new_template_dir = tmp / "new_template"
-        clone_at_commit(config.template, old_commit, old_template_dir)
-        clone_at_commit(config.template, new_commit, new_template_dir)
+        clone_at_commit(entry.template, old_commit, old_template_dir)
+        clone_at_commit(entry.template, new_commit, new_template_dir)
 
         # Detect variables added in the new template and prompt the user
         new_vars = detect_new_variables(new_template_dir, old_context)
@@ -81,17 +107,18 @@ def run_update(
         patch = generate_diff(old_rendered, new_rendered)
 
     hook_env = {
-        "REBAKE_TEMPLATE": config.template,
+        "REBAKE_TEMPLATE": entry.template,
         "REBAKE_OLD_COMMIT": old_commit,
         "REBAKE_NEW_COMMIT": new_commit,
         "REBAKE_PROJECT_DIR": str(project_dir),
+        "REBAKE_TARGET_DIR": str(target),
     }
-    run_hooks("pre-update", project_dir, config.hooks.get("pre-update", []), env=hook_env)
+    run_hooks("pre-update", target, entry.hooks.get("pre-update", []), env=hook_env)
 
     if patch:
-        success, stderr = apply_patch(patch, project_dir)
+        success, stderr = apply_patch(patch, target)
         if not success:
-            rej_files = sorted(project_dir.rglob("*.rej"))
+            rej_files = sorted(target.rglob("*.rej"))
             console.print("[yellow]![/yellow] Some hunks could not be applied.")
             if rej_files:
                 console.print("Resolve conflicts and delete the following [bold].rej[/bold] files:")
@@ -105,10 +132,10 @@ def run_update(
         console.print("[green]✓[/green] No changes to apply.")
 
     # Persist the new commit hash and any newly prompted variables.
-    # Save even on partial apply so the next run starts from the new baseline
-    # rather than re-applying the same diff.
-    config.commit = new_commit
-    config.context["cookiecutter"] = merged_context
+    # Save after each entry so a partial run (or a mid-loop abort) still starts
+    # the next run from the new baseline rather than re-applying the same diff.
+    entry.commit = new_commit
+    entry.context["cookiecutter"] = merged_context
     config.save(project_dir)
 
-    run_hooks("post-update", project_dir, config.hooks.get("post-update", []), env=hook_env)
+    run_hooks("post-update", target, entry.hooks.get("post-update", []), env=hook_env)
