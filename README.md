@@ -121,6 +121,30 @@ rebake update --quiet
 
 When `--quiet` is used and new variables are found, rebake prints each variable name and its default value to stderr, then exits with code 1.
 
+### `rebake add`
+
+Register and render an *additional* cookiecutter template into an existing
+repository. This is how a repository comes to track [multiple
+templates](#multiple-templates).
+
+```bash
+rebake add <TEMPLATE> [--project-dir REPO] [--target-directory SUBDIR] [--checkout REF]
+```
+
+- `<TEMPLATE>` — a cookiecutter template URL or local path (anything cookiecutter accepts, e.g. `https://github.com/org/repo` or `./path/to/template`).
+- `--target-directory`, `-t` — sub-path within the repository to render into (default: `.`, the repository root). This is the entry's `target_directory` in `rebake.yaml`.
+  - Note: cookiecutter's top-level project-name folder is stripped, so the template's files land directly under this path.
+- `--project-dir`, `-p` — repository root whose `rebake.yaml` the new entry is appended to (created if absent).
+- `--checkout`, `-c` — branch, tag or commit to pin.
+
+Example — a repository tracking a shared "common" template at its root and a
+Go service scaffold under `api/`:
+
+```bash
+rebake add https://github.com/org/cookiecutter-common     # -> repo root
+rebake add https://github.com/org/cookiecutter-go -t api  # -> api/
+```
+
 ## Multiple templates
 
 A single repository can track more than one cookiecutter template — for example
@@ -133,7 +157,8 @@ template's diff into its own `target_directory`.
 Every link is self-contained: `context`, `checkout`, `skip` and `hooks` are all
 per-entry, so each template keeps its own variables and hooks.
 
-Add a link by adding an entry to the `templates:` list in `rebake.yaml`.
+Add a link with [`rebake add`](#rebake-add), or by hand-editing the
+`templates:` list in `rebake.yaml`.
 
 ## Migrating from cruft
 

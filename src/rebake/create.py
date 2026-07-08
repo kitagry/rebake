@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -79,3 +81,54 @@ def run_create(
     RebakeConfig(templates=[entry]).save(rendered_project)
 
     return rendered_project
+
+
+def run_add(
+    template: str,
+    project_dir: Path = Path("."),
+    target_directory: str = ".",
+    checkout: str | None = None,
+) -> TemplateEntry:
+    """Render an additional template into ``project_dir/target_directory`` and register it.
+
+    Appends an entry to the repository's root ``rebake.yaml`` (creating the file
+    when absent). cookiecutter always renders inside a top-level project folder;
+    that wrapper is stripped so the template's files land directly under
+    ``target_directory``.
+    """
+    project_dir = project_dir.resolve()
+    target = project_dir / target_directory
+    # The entry must live under the repository: reject a target that escapes it
+    # (e.g. `-t ../foo` or an absolute path), which a later `update` would
+    # otherwise re-render outside project_dir.
+    if not target.resolve().is_relative_to(project_dir):
+        raise ValueError(f"target_directory {target_directory!r} escapes the repository root {project_dir}.")
+
+    # Load (or start) the config before writing anything. A missing
+    # rebake.yaml/.cruft.json starts a fresh config; an existing but malformed
+    # file raises here (ValueError, intentionally left to propagate) before any
+    # rendered files land on disk, so a failed add leaves no orphaned files.
+    try:
+        config = RebakeConfig.load(project_dir)
+    except FileNotFoundError:
+        config = RebakeConfig(templates=[])
+
+    commit = get_template_head_commit(template, checkout=checkout)
+
+    target.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rendered_path_str, context = cookiecutter_interactive(template, Path(tmpdir), checkout=checkout)
+        # Strip the cookiecutter project-name wrapper: copy its contents into target.
+        shutil.copytree(rendered_path_str, target, dirs_exist_ok=True)
+
+    entry = TemplateEntry(
+        template=template,
+        commit=commit,
+        context={"cookiecutter": context},
+        checkout=checkout,
+        target_directory=target_directory,
+    )
+    config.templates.append(entry)
+    config.save(project_dir)
+
+    return entry
