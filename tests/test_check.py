@@ -72,7 +72,7 @@ def make_multi_project(tmp_path, commits: list[str]) -> Path:
                 "template": f"https://github.com/owner/template{i}",
                 "commit": commit,
                 "context": {"cookiecutter": {}},
-                "directory": "." if i == 0 else f"sub{i}",
+                "target_directory": "." if i == 0 else f"sub{i}",
             }
             for i, commit in enumerate(commits)
         ]
@@ -108,5 +108,5 @@ def test_check_entries_reports_each_template(tmp_path):
     assert len(checks) == 2
     assert checks[0].result == CheckResult.UP_TO_DATE
     assert checks[1].result == CheckResult.OUTDATED
-    assert checks[1].entry.directory == "sub1"
+    assert checks[1].entry.target_directory == "sub1"
     assert checks[1].head_commit == "ccc"

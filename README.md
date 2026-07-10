@@ -53,6 +53,12 @@ Exit codes:
 - `1` — outdated
 - `2` — error (e.g. `.cruft.json` not found)
 
+> **User-facing change:** the stdout is now reported per template link
+> (`<template> (<target_directory>) is up-to-date.`) instead of the previous
+> single `Project is up-to-date.` / `Project is outdated.`. Exit codes are
+> unchanged, so CI gates keep working, but scripts that grep this stdout need
+> updating.
+
 ### `rebake update`
 
 Apply the latest template changes to the project.
@@ -99,7 +105,7 @@ Hooks run in the project directory with the following environment variables avai
 | `REBAKE_OLD_COMMIT` | Commit hash before the update |
 | `REBAKE_NEW_COMMIT` | Commit hash after the update |
 | `REBAKE_PROJECT_DIR` | Absolute path to the repository root |
-| `REBAKE_TARGET_DIR` | Absolute path to this template's target directory (`REBAKE_PROJECT_DIR/<directory>`) |
+| `REBAKE_TARGET_DIR` | Absolute path to this template's target directory (`REBAKE_PROJECT_DIR/<target_directory>`) |
 
 For multi-template repositories, hooks run once per template link with the
 working directory set to that link's target directory.
@@ -120,17 +126,14 @@ When `--quiet` is used and new variables are found, rebake prints each variable 
 A single repository can track more than one cookiecutter template — for example
 a shared CI/config template at the root plus one language scaffold per
 sub-directory. Each template link (an entry in the `templates:` list) records
-its own `commit` and a `directory` (the sub-path its patches apply to).
+its own `commit` and a `target_directory` (the sub-path its patches apply to).
 `rebake check` and `rebake update` operate on every link; `update` applies each
-template's diff into its own `directory`.
+template's diff into its own `target_directory`.
 
 Every link is self-contained: `context`, `checkout`, `skip` and `hooks` are all
 per-entry, so each template keeps its own variables and hooks.
 
-Add a link by adding an entry to the `templates:` list in `rebake.yaml`. A
-repository stays in the single-template top-level form until it has more than
-one link, at which point `rebake.yaml` uses the `templates:` list form shown
-below.
+Add a link by adding an entry to the `templates:` list in `rebake.yaml`.
 
 ## Migrating from cruft
 
@@ -148,48 +151,55 @@ rebake update
 
 ## `rebake.yaml` format
 
-Single-template form (also reads a legacy `.cruft.json` with the same keys):
-
-```yaml
-template: https://github.com/owner/template
-commit: abc123...
-checkout: main          # optional: branch/tag/commit to track
-context:
-  cookiecutter:
-    project_name: my-project
-    author: Jane Doe
-skip:                   # optional: file patterns to skip
-  - go.sum
-  - "*.lock"
-hooks:                  # optional: shell commands to run on update
-  pre-update:
-    - make lint
-  post-update:
-    - make fmt
-```
-
-Multi-template form (used automatically once a repository has more than one
-template link — see [Multiple templates](#multiple-templates)):
+rebake writes the `templates:` list form (one entry per template link, even
+when there is only one):
 
 ```yaml
 templates:
   - template: https://github.com/owner/cookiecutter-common
     commit: aaa111...
-    checkout: main
+    checkout: main          # optional: branch/tag/commit to track
     context:
       cookiecutter:
         project_name: my-repo
-    # directory defaults to "." (repository root)
+        author: Jane Doe
+    skip:                   # optional: file patterns to skip
+      - go.sum
+      - "*.lock"
+    hooks:                  # optional: shell commands to run on update
+      pre-update:
+        - make lint
+      post-update:
+        - make fmt
+    # target_directory defaults to "." (repository root)
   - template: https://github.com/owner/cookiecutter-go
     commit: bbb222...
-    directory: api        # this link's patches apply under api/
+    target_directory: api   # this link's patches apply under api/
     context:
       cookiecutter:
         project_name: my-repo
 ```
 
-Each entry accepts the same fields as the single-template form, plus
-`directory` (the sub-path the link's patches apply to; defaults to `.`).
+`target_directory` is the sub-path within your repository that the link's
+patches apply to (defaults to `.`). It is intentionally **not** named
+`directory`: cruft's `.cruft.json` uses `directory` for the opposite thing (a
+sub-directory *inside the template repo*), so rebake ignores that key on read
+and reserves the name.
+
+### Legacy formats (read-only)
+
+For backward compatibility, rebake also reads the older single-template
+top-level form and a cruft `.cruft.json` with the same keys. The next
+`rebake update` rewrites the file into the `templates:` list form above.
+
+```yaml
+template: https://github.com/owner/template
+commit: abc123...
+checkout: main
+context:
+  cookiecutter:
+    project_name: my-project
+```
 
 ## Development
 

@@ -44,7 +44,7 @@ def test_reparametrize_updates_config(project_dir: Path) -> None:
     ):
         runner.invoke(app, ["reparametrize", str(project_dir)])
 
-    from rebake.config import CruftConfig
+    from rebake.config import RebakeConfig
 
-    updated = CruftConfig.load(project_dir)
+    updated = RebakeConfig.load(project_dir).templates[0]
     assert updated.context["cookiecutter"]["project_name"] == "new-project"

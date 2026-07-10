@@ -8,7 +8,7 @@ from cookiecutter.generate import generate_context, generate_files
 from cookiecutter.prompt import prompt_for_config
 from cookiecutter.repository import determine_repo_dir
 
-from rebake.config import CruftConfig
+from rebake.config import CruftConfig, RebakeConfig
 from rebake.utils.git import get_template_head_commit
 
 
@@ -63,19 +63,19 @@ def run_create(
     output_dir: Path = Path("."),
     checkout: str | None = None,
 ) -> Path:
-    """Create a new project from a cookiecutter template and write .cruft.json."""
+    """Create a new project from a cookiecutter template and write rebake.yaml."""
     output_dir = output_dir.resolve()
 
     commit = get_template_head_commit(template, checkout=checkout)
     rendered_path_str, context = cookiecutter_interactive(template, output_dir, checkout=checkout)
     rendered_project = Path(rendered_path_str)
 
-    config = CruftConfig(
+    entry = CruftConfig(
         template=template,
         commit=commit,
         context={"cookiecutter": context},
         checkout=checkout,
     )
-    config.save(rendered_project)
+    RebakeConfig(templates=[entry]).save(rendered_project)
 
     return rendered_project

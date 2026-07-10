@@ -62,9 +62,9 @@ def test_update_saves_new_commit_and_context(tmp_path):
     ):
         run_update(project_dir)
 
-    from rebake.config import CruftConfig
+    from rebake.config import RebakeConfig
 
-    updated = CruftConfig.load(project_dir)
+    updated = RebakeConfig.load(project_dir).templates[0]
     assert updated.commit == "def456"
     assert updated.context["cookiecutter"]["license"] == "Apache-2.0"
 
@@ -286,7 +286,7 @@ def test_update_post_hook_runs_after_config_save(tmp_path):
         patch("rebake.update.prompt_new_variables"),
         patch("rebake.update.generate_diff", return_value=""),
         patch("rebake.update.apply_patch", return_value=(True, "")),
-        patch("rebake.config.CruftConfig.save", side_effect=record_save),
+        patch("rebake.config.RebakeConfig.save", side_effect=record_save),
         patch("rebake.update.run_hooks", side_effect=record_hook),
     ):
         run_update(project_dir)
@@ -316,9 +316,9 @@ def test_update_with_checkout_advances_to_that_ref(tmp_path):
 
     mock_head.assert_called_once_with("https://github.com/owner/template", checkout=midway_ref)
 
-    from rebake.config import CruftConfig
+    from rebake.config import RebakeConfig
 
-    updated = CruftConfig.load(project_dir)
+    updated = RebakeConfig.load(project_dir).templates[0]
     assert updated.checkout == midway_ref
 
 

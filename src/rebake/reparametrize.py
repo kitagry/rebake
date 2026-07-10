@@ -44,7 +44,7 @@ def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: b
         console.print("[green]✓[/green] No changes.")
         return
 
-    target = project_dir / entry.directory
+    target = project_dir / entry.target_directory
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)

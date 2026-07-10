@@ -16,15 +16,22 @@ class CruftConfig:
     """A single template link.
 
     A repository may register more than one of these (see ``RebakeConfig``);
-    ``directory`` is the sub-path within the repository that this template's
-    patches are applied to (``"."`` for the repository root).
+    ``target_directory`` is the sub-path within the repository that this
+    template's patches are applied to (``"."`` for the repository root).
+
+    ``target_directory`` is deliberately *not* named ``directory``: cruft's
+    ``.cruft.json`` already uses ``directory`` for the opposite thing (a
+    sub-directory **inside the template repo**, i.e. cookiecutter's
+    ``--directory``). Reusing that name would silently misread a cruft-authored
+    config and apply patches to the wrong place, so ``directory`` is left
+    untouched (and reserved for a future template-side feature).
     """
 
     template: str
     commit: str
     context: dict[str, Any]
     checkout: str | None = None
-    directory: str = "."
+    target_directory: str = "."
     skip: list[str] = field(default_factory=list)
     hooks: dict[str, list[str]] = field(default_factory=dict)
 
@@ -35,9 +42,9 @@ class CruftConfig:
             commit=data["commit"],
             context=data.get("context", {}),
             checkout=data.get("checkout"),
-            # A legacy cruft .cruft.json carries `directory` (its own, unrelated
-            # meaning) often as null; treat null/absent/empty as the repo root.
-            directory=data.get("directory") or ".",
+            # Only rebake's own `target_directory` is honoured. cruft's
+            # `directory` (template-side meaning) is ignored on purpose.
+            target_directory=data.get("target_directory") or ".",
             skip=data.get("skip", []),
             hooks=data.get("hooks", {}),
         )
@@ -50,27 +57,13 @@ class CruftConfig:
         }
         if self.checkout is not None:
             data["checkout"] = self.checkout
-        if self.directory != ".":
-            data["directory"] = self.directory
+        if self.target_directory != ".":
+            data["target_directory"] = self.target_directory
         if self.skip:
             data["skip"] = self.skip
         if self.hooks:
             data["hooks"] = self.hooks
         return data
-
-    @classmethod
-    def load(cls, project_dir: Path = Path(".")) -> "CruftConfig":
-        """Load the first template link (backward-compatible single-template API)."""
-        return RebakeConfig.load(project_dir).templates[0]
-
-    def save(self, project_dir: Path = Path(".")) -> None:
-        """Write this single template link in the legacy top-level form."""
-        rebake_file = project_dir / REBAKE_FILE
-        rebake_file.write_text(yaml.dump(self.to_dict(), allow_unicode=True, sort_keys=False))
-
-        cruft_file = project_dir / CRUFT_FILE
-        if cruft_file.exists():
-            cruft_file.unlink()
 
 
 @dataclass
@@ -93,7 +86,10 @@ class RebakeConfig:
 
         # Multi-template form: {"templates": [...]}
         if isinstance(data, dict) and "templates" in data:
-            return cls(templates=[CruftConfig.from_dict(entry) for entry in data["templates"]])
+            entries = data["templates"]
+            if not entries:
+                raise ValueError(f"'templates' is empty in {project_dir}; at least one template link is required.")
+            return cls(templates=[CruftConfig.from_dict(entry) for entry in entries])
 
         # Legacy single-template form (rebake.yaml or .cruft.json): {"template": ...}
         if isinstance(data, dict) and "template" in data:
@@ -105,13 +101,9 @@ class RebakeConfig:
         if not self.templates:
             raise ValueError("Cannot save a RebakeConfig with no template links.")
 
-        # Keep the legacy top-level shape for single-template repos so existing
-        # repositories and tooling see no schema change; only multi-template
-        # repos get the `templates:` list form.
-        if len(self.templates) == 1:
-            self.templates[0].save(project_dir)
-            return
-
+        # Always write the `templates:` list form, even for a single template.
+        # The read side still accepts the legacy top-level shape and .cruft.json,
+        # so this stays one-way backward compatible while keeping one write path.
         out = {"templates": [entry.to_dict() for entry in self.templates]}
         (project_dir / REBAKE_FILE).write_text(yaml.dump(out, allow_unicode=True, sort_keys=False))
 

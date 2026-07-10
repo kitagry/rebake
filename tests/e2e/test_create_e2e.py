@@ -44,11 +44,11 @@ def test_create_generates_project_and_rebake_yaml(tmp_path: Path) -> None:
 
     rebake_yaml = project_dir / "rebake.yaml"
     assert rebake_yaml.exists()
-    data = yaml.safe_load(rebake_yaml.read_text())
-    assert data["template"] == str(template_repo)
-    assert "commit" in data
-    assert len(data["commit"]) == 40  # SHA-1 full hash
-    assert data["context"]["cookiecutter"]["project_name"] == "my-project"
+    entry = yaml.safe_load(rebake_yaml.read_text())["templates"][0]
+    assert entry["template"] == str(template_repo)
+    assert "commit" in entry
+    assert len(entry["commit"]) == 40  # SHA-1 full hash
+    assert entry["context"]["cookiecutter"]["project_name"] == "my-project"
 
 
 @pytest.mark.e2e
@@ -64,5 +64,5 @@ def test_create_with_checkout(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    data = yaml.safe_load((output_dir / "my-project" / "rebake.yaml").read_text())
-    assert data["checkout"] == "main"
+    entry = yaml.safe_load((output_dir / "my-project" / "rebake.yaml").read_text())["templates"][0]
+    assert entry["checkout"] == "main"

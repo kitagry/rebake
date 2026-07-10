@@ -60,7 +60,7 @@ def _update_entry(
     if checkout is not None:
         entry.checkout = checkout
 
-    target = project_dir / entry.directory
+    target = project_dir / entry.target_directory
     # A hand-added entry may reference a directory that does not exist yet; create
     # it so apply_patch's `git rev-parse` (run from target) does not fail obscurely.
     target.mkdir(parents=True, exist_ok=True)
@@ -68,7 +68,7 @@ def _update_entry(
     new_commit = get_template_head_commit(entry.template, checkout=entry.checkout)
 
     console.print(
-        f"Updating [bold]{entry.template}[/bold] ({entry.directory}): "
+        f"Updating [bold]{entry.template}[/bold] ({entry.target_directory}): "
         f"[cyan]{old_commit[:8]}[/cyan] → [cyan]{new_commit[:8]}[/cyan]"
     )
 

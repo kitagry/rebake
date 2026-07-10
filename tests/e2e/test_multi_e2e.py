@@ -68,7 +68,7 @@ def test_multi_update_applies_only_to_changed_template_subdir(tmp_path: Path) ->
                     {
                         "template": str(template_b),
                         "commit": _head_commit(template_b),
-                        "directory": "batch",
+                        "target_directory": "batch",
                         "context": {"cookiecutter": {"project_name": "proj-b"}},
                     },
                 ]

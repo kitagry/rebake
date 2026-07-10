@@ -43,10 +43,10 @@ def check(
     outdated = [c for c in checks if c.result == CheckResult.OUTDATED]
     for c in checks:
         if c.result == CheckResult.UP_TO_DATE:
-            console.print(f"[green]✓[/green] {c.entry.template} ({c.entry.directory}) is up-to-date.")
+            console.print(f"[green]✓[/green] {c.entry.template} ({c.entry.target_directory}) is up-to-date.")
         else:
             console.print(
-                f"[yellow]![/yellow] {c.entry.template} ({c.entry.directory}) is outdated: "
+                f"[yellow]![/yellow] {c.entry.template} ({c.entry.target_directory}) is outdated: "
                 f"[cyan]{c.entry.commit[:8]}[/cyan] → [cyan]{c.head_commit[:8]}[/cyan]"
             )
     raise typer.Exit(code=1 if outdated else 0)

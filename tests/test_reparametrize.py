@@ -76,9 +76,9 @@ def test_reparametrize_saves_new_context(tmp_path):
     ):
         run_reparametrize(project_dir)
 
-    from rebake.config import CruftConfig
+    from rebake.config import RebakeConfig
 
-    updated = CruftConfig.load(project_dir)
+    updated = RebakeConfig.load(project_dir).templates[0]
     assert updated.context["cookiecutter"]["author"] == "Bob"
     # commit hash は変わらない
     assert updated.commit == "abc123"
