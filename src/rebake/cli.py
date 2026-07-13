@@ -60,12 +60,18 @@ def reparametrize(
         "--allow-untracked-files",
         help="Allow reparametrize even if there are untracked files in the git repository (but no other changes)",
     ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Reparametrize only the template link with this name. Defaults to all links.",
+    ),
 ) -> None:
     """Change template variables and re-apply the diff."""
     from rebake.reparametrize import run_reparametrize
 
     try:
-        run_reparametrize(project_dir, allow_untracked_files=allow_untracked_files)
+        run_reparametrize(project_dir, allow_untracked_files=allow_untracked_files, name=name)
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)

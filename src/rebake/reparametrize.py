@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from rebake.config import RebakeConfig
+from rebake.config import CruftConfig, RebakeConfig
 from rebake.utils.git import (
     apply_patch,
     clone_at_commit,
@@ -18,25 +18,53 @@ from rebake.utils.variables import prompt_all_variables
 console = Console()
 
 
-def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: bool = False) -> None:
-    """Change template variables and re-apply the diff.
+def run_reparametrize(
+    project_dir: Path = Path("."),
+    *,
+    allow_untracked_files: bool = False,
+    name: str | None = None,
+) -> None:
+    """Change template variables and re-apply the diff for each template link.
 
-    Raises RuntimeError when the working tree has uncommitted changes.
+    By default every registered template link is reparametrized in turn. Pass
+    ``name`` to reparametrize only the link whose ``CruftConfig.name`` matches.
+
+    Raises RuntimeError when the working tree has uncommitted changes, or when
+    ``name`` does not match a named link.
     """
+    # Resolve to absolute path before any subprocess/cookiecutter calls that may change CWD
     project_dir = project_dir.resolve()
 
     if not is_working_tree_clean(project_dir, allow_untracked_files=allow_untracked_files):
         raise RuntimeError("Project has uncommitted changes. Please commit or stash them before reparametrizing.")
 
     config = RebakeConfig.load(project_dir)
-    if len(config.templates) != 1:
-        raise RuntimeError(
-            "reparametrize supports single-template repositories only. "
-            "Edit context values in rebake.yaml directly for multi-template repos."
-        )
-    entry = config.templates[0]
+
+    for entry in _select_entries(config, name):
+        _reparametrize_entry(entry, project_dir, config)
+
+
+def _select_entries(config: RebakeConfig, name: str | None) -> list[CruftConfig]:
+    """Return the template links to reparametrize.
+
+    Without ``name`` every link is selected. With ``name`` only the link whose
+    ``name`` matches is selected; unnamed links cannot be targeted by name. This
+    mirrors ``update._apply_checkout_override``'s selection philosophy.
+    """
+    if name is None:
+        return config.templates
+
+    matches = [entry for entry in config.templates if entry.name == name]
+    if not matches:
+        available = ", ".join(sorted(e.name for e in config.templates if e.name)) or "(no named links)"
+        raise RuntimeError(f"No template link named '{name}'. Named links: {available}.")
+    return matches
+
+
+def _reparametrize_entry(entry: CruftConfig, project_dir: Path, config: RebakeConfig) -> None:
     old_context = entry.context.get("cookiecutter", {})
 
+    console.print(f"Reparametrizing [bold]{entry.template}[/bold] ({entry.target_directory}):")
     console.print("[cyan]Current variables (Enter to keep):[/cyan]")
     new_context = prompt_all_variables(old_context)
 
@@ -45,6 +73,9 @@ def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: b
         return
 
     target = project_dir / entry.target_directory
+    # A hand-added entry may reference a directory that does not exist yet; create
+    # it so apply_patch's `git rev-parse` (run from target) does not fail obscurely.
+    target.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -77,5 +108,8 @@ def run_reparametrize(project_dir: Path = Path("."), *, allow_untracked_files: b
     else:
         console.print("[green]✓[/green] No changes to apply.")
 
+    # Persist the new context. Save after each entry so a partial run (or a
+    # mid-loop abort) still persists the entries already processed — mirrors
+    # update._update_entry's per-entry save rationale.
     entry.context["cookiecutter"] = new_context
     config.save(project_dir)
