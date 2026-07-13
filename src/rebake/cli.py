@@ -89,7 +89,7 @@ def update(
         None,
         "--checkout",
         "-c",
-        help="Branch, tag or commit to follow.",
+        help="Branch, tag or commit to follow. On a multi-template repo, use <name>@<ref> to target one link.",
     ),
 ) -> None:
     """Apply the latest template changes to the project."""

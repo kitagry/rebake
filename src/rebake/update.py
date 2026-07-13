@@ -40,13 +40,37 @@ def run_update(
 
     config = RebakeConfig.load(project_dir)
 
-    if checkout is not None and len(config.templates) > 1:
-        raise RuntimeError(
-            "--checkout is ambiguous for a multi-template repository. Set `checkout:` per entry in rebake.yaml instead."
-        )
+    if checkout is not None:
+        _apply_checkout_override(config, checkout)
 
     for entry in config.templates:
-        _update_entry(entry, project_dir, config, quiet=quiet, checkout=checkout)
+        _update_entry(entry, project_dir, config, quiet=quiet)
+
+
+def _apply_checkout_override(config: RebakeConfig, checkout: str) -> None:
+    """Apply a CLI ``--checkout`` override to ``config`` in place.
+
+    Single-template: the value is the ref for the sole link.
+    Multi-template: the value must be ``<name>@<ref>`` and overrides only the
+    link whose ``name`` matches; per-entry ``checkout:`` in rebake.yaml is left
+    untouched.
+    """
+    if len(config.templates) == 1:
+        config.templates[0].checkout = checkout
+        return
+
+    name, sep, ref = checkout.partition("@")
+    if not sep or not name:
+        raise RuntimeError(
+            "--checkout is ambiguous for a multi-template repository. "
+            "Use `<name>@<ref>` (e.g. go@main) to target one link, or set `checkout:` per entry in rebake.yaml."
+        )
+    matches = [entry for entry in config.templates if entry.name == name]
+    if not matches:
+        available = ", ".join(sorted(e.name for e in config.templates if e.name)) or "(no named links)"
+        raise RuntimeError(f"No template link named '{name}'. Named links: {available}.")
+    for entry in matches:
+        entry.checkout = ref
 
 
 def _update_entry(
@@ -55,11 +79,7 @@ def _update_entry(
     config: RebakeConfig,
     *,
     quiet: bool,
-    checkout: str | None,
 ) -> None:
-    if checkout is not None:
-        entry.checkout = checkout
-
     target = project_dir / entry.target_directory
     # A hand-added entry may reference a directory that does not exist yet; create
     # it so apply_patch's `git rev-parse` (run from target) does not fail obscurely.

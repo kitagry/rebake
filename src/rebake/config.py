@@ -19,6 +19,9 @@ class CruftConfig:
     ``target_directory`` is the sub-path within the repository that this
     template's patches are applied to (``"."`` for the repository root).
 
+    ``name`` is an optional label used to target this link from the CLI, e.g.
+    ``rebake update --checkout <name>@<ref>`` on a multi-template repository.
+
     ``target_directory`` is deliberately *not* named ``directory``: cruft's
     ``.cruft.json`` already uses ``directory`` for the opposite thing (a
     sub-directory **inside the template repo**, i.e. cookiecutter's
@@ -31,6 +34,7 @@ class CruftConfig:
     commit: str
     context: dict[str, Any]
     checkout: str | None = None
+    name: str | None = None
     target_directory: str = "."
     skip: list[str] = field(default_factory=list)
     hooks: dict[str, list[str]] = field(default_factory=dict)
@@ -42,6 +46,7 @@ class CruftConfig:
             commit=data["commit"],
             context=data.get("context", {}),
             checkout=data.get("checkout"),
+            name=data.get("name"),
             # Only rebake's own `target_directory` is honoured. cruft's
             # `directory` (template-side meaning) is ignored on purpose.
             target_directory=data.get("target_directory") or ".",
@@ -53,8 +58,10 @@ class CruftConfig:
         data: dict[str, Any] = {
             "template": self.template,
             "commit": self.commit,
-            "context": self.context,
         }
+        if self.name is not None:
+            data["name"] = self.name
+        data["context"] = self.context
         if self.checkout is not None:
             data["checkout"] = self.checkout
         if self.target_directory != ".":

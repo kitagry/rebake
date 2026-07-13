@@ -357,3 +357,32 @@ def test_rebake_config_save_empty_raises(tmp_path):
     config = RebakeConfig(templates=[])
     with pytest.raises(ValueError):
         config.save(tmp_path)
+
+
+def test_entry_name_roundtrips(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://x/a", commit="aaa", context={"cookiecutter": {}}, name="alpha"),
+            CruftConfig(template="https://x/b", commit="bbb", context={"cookiecutter": {}}, name="beta"),
+        ]
+    )
+    config.save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert [entry["name"] for entry in raw["templates"]] == ["alpha", "beta"]
+
+    loaded = RebakeConfig.load(tmp_path)
+    assert [entry.name for entry in loaded.templates] == ["alpha", "beta"]
+
+
+def test_entry_name_omitted_when_absent(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://x/a", commit="aaa", context={"cookiecutter": {}}),
+            CruftConfig(template="https://x/b", commit="bbb", context={"cookiecutter": {}}),
+        ]
+    )
+    config.save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert all("name" not in entry for entry in raw["templates"])

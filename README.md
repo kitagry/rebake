@@ -82,7 +82,7 @@ rebake will:
 |---|---|
 | `--allow-untracked-files` | Allow update even if untracked files exist (no other changes) |
 | `--quiet` | Disable interactive prompts; exit 1 if new variables are found without a supplied value |
-| `--checkout`, `-c` | Branch, tag or commit to follow |
+| `--checkout`, `-c` | Branch, tag or commit to follow. On a [multi-template](#multiple-templates) repo, use `<name>@<ref>` (e.g. `go@main`) to target the link named `go`; a bare `<ref>` is rejected as ambiguous |
 
 #### Hooks
 
@@ -158,6 +158,7 @@ when there is only one):
 templates:
   - template: https://github.com/owner/cookiecutter-common
     commit: aaa111...
+    name: common            # optional: label to target this link from the CLI
     checkout: main          # optional: branch/tag/commit to track
     context:
       cookiecutter:
@@ -174,6 +175,7 @@ templates:
     # target_directory defaults to "." (repository root)
   - template: https://github.com/owner/cookiecutter-go
     commit: bbb222...
+    name: go
     target_directory: api   # this link's patches apply under api/
     context:
       cookiecutter:
@@ -185,6 +187,10 @@ patches apply to (defaults to `.`). It is intentionally **not** named
 `directory`: cruft's `.cruft.json` uses `directory` for the opposite thing (a
 sub-directory *inside the template repo*), so rebake ignores that key on read
 and reserves the name.
+
+`name` is an optional label for a link. On a multi-template repo it lets you
+target one link from the CLI, e.g. `rebake update --checkout go@main` follows
+`main` only for the link named `go`.
 
 ### Legacy formats (read-only)
 

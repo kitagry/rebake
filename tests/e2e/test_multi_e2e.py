@@ -100,3 +100,67 @@ def test_multi_update_applies_only_to_changed_template_subdir(tmp_path: Path) ->
     data = yaml.safe_load((repo / "rebake.yaml").read_text())
     b_entry = next(e for e in data["templates"] if e["template"] == str(template_b))
     assert b_entry["commit"] == _head_commit(template_b)
+
+
+@pytest.mark.e2e
+def test_multi_update_checkout_targets_named_entry(tmp_path: Path) -> None:
+    template_a = _make_template_repo(tmp_path / "template_a")
+    template_b = _make_template_repo(tmp_path / "template_b")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    c0 = _head_commit(template_a)
+    _render_into(template_a, repo, "proj-a", tmp_path)
+    _render_into(template_b, repo / "b", "proj-b", tmp_path)
+
+    # template_a: commit file1 (tag v1), then commit file2 (HEAD, past v1)
+    (template_a / "{{cookiecutter.project_name}}" / "file1.txt").write_text("f1\n")
+    _git(["add", "."], template_a)
+    _git(["commit", "-m", "file1"], template_a)
+    _git(["tag", "v1"], template_a)
+    c1 = _head_commit(template_a)
+    (template_a / "{{cookiecutter.project_name}}" / "file2.txt").write_text("f2\n")
+    _git(["add", "."], template_a)
+    _git(["commit", "-m", "file2"], template_a)
+
+    (repo / "rebake.yaml").write_text(
+        yaml.dump(
+            {
+                "templates": [
+                    {
+                        "template": str(template_a),
+                        "commit": c0,
+                        "name": "a",
+                        "context": {"cookiecutter": {"project_name": "proj-a"}},
+                    },
+                    {
+                        "template": str(template_b),
+                        "commit": _head_commit(template_b),
+                        "name": "b",
+                        "target_directory": "b",
+                        "context": {"cookiecutter": {"project_name": "proj-b"}},
+                    },
+                ]
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        )
+    )
+
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@test.com"], repo)
+    _git(["config", "user.name", "Test"], repo)
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "init repo"], repo)
+
+    result = runner.invoke(app, ["update", str(repo), "--checkout", "a@v1"])
+    assert result.exit_code == 0, result.output
+
+    # `a` follows v1: file1 (up to the tag) is applied, file2 (past v1) is not.
+    assert (repo / "file1.txt").read_text() == "f1\n"
+    assert not (repo / "file2.txt").exists()
+
+    data = yaml.safe_load((repo / "rebake.yaml").read_text())
+    a_entry = next(e for e in data["templates"] if e["name"] == "a")
+    assert a_entry["checkout"] == "v1"
+    assert a_entry["commit"] == c1
