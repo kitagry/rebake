@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from rebake.reparametrize import run_reparametrize
 
@@ -113,3 +114,32 @@ def test_reparametrize_passes_allow_untracked_files_flag(tmp_path):
         run_reparametrize(tmp_path, allow_untracked_files=True)
 
     mock_clean.assert_called_once_with(tmp_path.resolve(), allow_untracked_files=True)
+
+
+def test_reparametrize_rejects_multi_template_without_touching_config(tmp_path):
+    """reparametrize is single-template only; a multi-template repo must be rejected
+    and its rebake.yaml left untouched (no entries dropped)."""
+    rebake_yaml = tmp_path / "rebake.yaml"
+    rebake_yaml.write_text(
+        yaml.dump(
+            {
+                "templates": [
+                    {"template": "https://x/a", "commit": "aaa", "context": {"cookiecutter": {}}},
+                    {
+                        "template": "https://x/b",
+                        "commit": "bbb",
+                        "target_directory": "batch",
+                        "context": {"cookiecutter": {}},
+                    },
+                ]
+            }
+        )
+    )
+    (tmp_path / ".git").mkdir()
+    before = rebake_yaml.read_text()
+
+    with patch("rebake.reparametrize.is_working_tree_clean", return_value=True):
+        with pytest.raises(RuntimeError, match="single-template"):
+            run_reparametrize(tmp_path)
+
+    assert rebake_yaml.read_text() == before
