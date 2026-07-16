@@ -386,3 +386,53 @@ def test_entry_name_omitted_when_absent(tmp_path):
 
     raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
     assert all("name" not in entry for entry in raw["templates"])
+
+
+def test_load_rejects_duplicate_names(tmp_path):
+    data = {
+        "templates": [
+            {"template": "https://x/a", "commit": "aaa", "context": {}, "name": "go"},
+            {"template": "https://x/b", "commit": "bbb", "context": {}, "name": "go"},
+        ]
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data))
+    with pytest.raises(ValueError, match="Duplicate template link name 'go'"):
+        RebakeConfig.load(tmp_path)
+
+
+@pytest.mark.parametrize("bad_name", ["foo@bar", "", "has space", "go\n"])
+def test_load_rejects_invalid_names(tmp_path, bad_name):
+    data = {"templates": [{"template": "https://x/a", "commit": "aaa", "context": {}, "name": bad_name}]}
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data))
+    with pytest.raises(ValueError, match="names must match"):
+        RebakeConfig.load(tmp_path)
+
+
+def test_find_by_name_returns_matching_entry():
+    entry_a = CruftConfig(template="https://x/a", commit="aaa", context={}, name="a")
+    entry_b = CruftConfig(template="https://x/b", commit="bbb", context={}, name="b")
+    config = RebakeConfig(templates=[entry_a, entry_b])
+
+    assert config.find_by_name("b") is entry_b
+
+
+def test_find_by_name_unknown_lists_available_names():
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://x/a", commit="aaa", context={}, name="a"),
+            CruftConfig(template="https://x/b", commit="bbb", context={}, name="b"),
+        ]
+    )
+    with pytest.raises(RuntimeError, match=r"No template link named 'nope'\. Named links: a, b\."):
+        config.find_by_name("nope")
+
+
+def test_find_by_name_when_no_named_links():
+    config = RebakeConfig(
+        templates=[
+            CruftConfig(template="https://x/a", commit="aaa", context={}),
+            CruftConfig(template="https://x/b", commit="bbb", context={}),
+        ]
+    )
+    with pytest.raises(RuntimeError, match="No named links in this repo"):
+        config.find_by_name("a")

@@ -436,6 +436,14 @@ def test_update_checkout_without_name_on_multi_raises(tmp_path):
             run_update(project_dir, checkout="main")
 
 
+def test_update_checkout_empty_ref_on_multi_raises(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+
+    with patch("rebake.update.is_working_tree_clean", return_value=True):
+        with pytest.raises(RuntimeError, match="ambiguous"):
+            run_update(project_dir, checkout="go@")
+
+
 def test_update_checkout_unknown_name_on_multi_raises(tmp_path):
     project_dir = make_multi_project(tmp_path)
 

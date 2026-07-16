@@ -183,11 +183,11 @@ def test_reparametrize_unknown_name_raises_and_does_not_touch_config(tmp_path):
     assert rebake_yaml.read_text() == before
 
 
-def test_reparametrize_name_on_unnamed_only_lists_no_named_links(tmp_path):
+def test_reparametrize_name_on_unnamed_only_hints_at_adding_names(tmp_path):
     project_dir = make_multi_project(tmp_path, named=False)
 
     with patch("rebake.reparametrize.is_working_tree_clean", return_value=True):
-        with pytest.raises(RuntimeError, match=r"\(no named links\)"):
+        with pytest.raises(RuntimeError, match="No named links in this repo"):
             run_reparametrize(project_dir, name="a")
 
 

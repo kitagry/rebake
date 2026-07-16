@@ -60,17 +60,12 @@ def _apply_checkout_override(config: RebakeConfig, checkout: str) -> None:
         return
 
     name, sep, ref = checkout.partition("@")
-    if not sep or not name:
+    if not sep or not name or not ref:
         raise RuntimeError(
             "--checkout is ambiguous for a multi-template repository. "
             "Use `<name>@<ref>` (e.g. go@main) to target one link, or set `checkout:` per entry in rebake.yaml."
         )
-    matches = [entry for entry in config.templates if entry.name == name]
-    if not matches:
-        available = ", ".join(sorted(e.name for e in config.templates if e.name)) or "(no named links)"
-        raise RuntimeError(f"No template link named '{name}'. Named links: {available}.")
-    for entry in matches:
-        entry.checkout = ref
+    config.find_by_name(name).checkout = ref
 
 
 def _update_entry(

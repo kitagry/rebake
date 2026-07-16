@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,13 @@ import yaml
 
 REBAKE_FILE = "rebake.yaml"
 CRUFT_FILE = ".cruft.json"
+
+# A template link's `name` is user-facing via the CLI (`update --checkout <name>@<ref>`,
+# `reparametrize --name <name>`). Restricting it to a slug keeps the config format in
+# sync with the CLI grammar: it forbids the empty string and any `@`, so a name can
+# never become unreachable through the `<name>@<ref>` parser. Matched with
+# `fullmatch` (no anchors) so a trailing newline can't sneak through `$`.
+_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+")
 
 
 @dataclass
@@ -78,6 +86,35 @@ class RebakeConfig:
     """All template links registered in a repository's ``rebake.yaml``."""
 
     templates: list[CruftConfig]
+
+    def __post_init__(self) -> None:
+        # Validate names here so the invariant holds for every RebakeConfig, however
+        # it was built: names are slugs and unique. `find_by_name` relies on the
+        # uniqueness invariant to return a single entry.
+        seen: set[str] = set()
+        for entry in self.templates:
+            if entry.name is None:
+                continue
+            if not _NAME_RE.fullmatch(entry.name):
+                raise ValueError(f"Invalid template link name {entry.name!r}: names must match [a-zA-Z0-9_-]+.")
+            if entry.name in seen:
+                raise ValueError(f"Duplicate template link name {entry.name!r}: names must be unique.")
+            seen.add(entry.name)
+
+    def find_by_name(self, name: str) -> CruftConfig:
+        """Return the single link whose ``name`` matches, or raise ``RuntimeError``.
+
+        Names are unique (enforced in ``__post_init__``), so at most one entry can
+        match. Raising here centralizes the lookup and the "not found" message shared
+        by ``update`` and ``reparametrize``.
+        """
+        for entry in self.templates:
+            if entry.name == name:
+                return entry
+        named = [e.name for e in self.templates if e.name]
+        if not named:
+            raise RuntimeError("No named links in this repo. Add `name:` to the entries you want to target by name.")
+        raise RuntimeError(f"No template link named '{name}'. Named links: {', '.join(sorted(named))}.")
 
     @classmethod
     def load(cls, project_dir: Path = Path(".")) -> "RebakeConfig":

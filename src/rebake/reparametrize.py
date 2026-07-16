@@ -53,12 +53,7 @@ def _select_entries(config: RebakeConfig, name: str | None) -> list[CruftConfig]
     """
     if name is None:
         return config.templates
-
-    matches = [entry for entry in config.templates if entry.name == name]
-    if not matches:
-        available = ", ".join(sorted(e.name for e in config.templates if e.name)) or "(no named links)"
-        raise RuntimeError(f"No template link named '{name}'. Named links: {available}.")
-    return matches
+    return [config.find_by_name(name)]
 
 
 def _reparametrize_entry(entry: CruftConfig, project_dir: Path, config: RebakeConfig) -> None:
