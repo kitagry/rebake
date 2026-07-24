@@ -5,14 +5,14 @@ import tempfile
 from pathlib import Path
 
 
-def get_template_head_commit(template_url: str, checkout: str | None = None) -> str:
-    """Return the HEAD commit hash of a remote template repository.
+def resolve_template_commit(template_url: str, checkout: str | None = None) -> str:
+    """Return the commit hash a remote template repository ref points to.
 
-    Uses git ls-remote for speed, avoiding a full clone.
-    Falls back to a shallow clone when checkout is a bare commit hash
-    that ls-remote cannot resolve.
+    Branches and tags are resolved with git ls-remote for speed, avoiding
+    a full clone. Anything ls-remote cannot resolve (e.g. a commit hash)
+    falls back to a clone.
     """
-    ref = checkout or "HEAD"
+    ref = "HEAD" if checkout is None else checkout
     try:
         result = subprocess.run(
             ["git", "ls-remote", template_url, ref],
@@ -27,19 +27,19 @@ def get_template_head_commit(template_url: str, checkout: str | None = None) -> 
         pass
 
     # ls-remote returns nothing when checkout is a commit hash, so clone instead
-    return _get_commit_via_clone(template_url, checkout)
+    return _get_commit_via_clone(template_url, ref)
 
 
-def _get_commit_via_clone(template_url: str, checkout: str | None) -> str:
+def _get_commit_via_clone(template_url: str, ref: str) -> str:
+    # A full clone is required: `git clone --branch` only accepts branches and tags
     with tempfile.TemporaryDirectory() as tmpdir:
-        clone_args = ["git", "clone", "--depth=1"]
-        if checkout:
-            clone_args += ["--branch", checkout]
-        clone_args += [template_url, tmpdir]
-        subprocess.run(clone_args, capture_output=True, check=True)
-
+        subprocess.run(
+            ["git", "clone", template_url, tmpdir],
+            capture_output=True,
+            check=True,
+        )
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
             capture_output=True,
             text=True,
             check=True,

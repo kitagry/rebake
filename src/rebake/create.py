@@ -9,7 +9,7 @@ from cookiecutter.prompt import prompt_for_config
 from cookiecutter.repository import determine_repo_dir
 
 from rebake.config import RebakeConfig, TemplateEntry
-from rebake.utils.git import get_template_head_commit
+from rebake.utils.git import resolve_template_commit
 
 
 def cookiecutter_interactive(
@@ -66,7 +66,7 @@ def run_create(
     """Create a new project from a cookiecutter template and write rebake.yaml."""
     output_dir = output_dir.resolve()
 
-    commit = get_template_head_commit(template, checkout=checkout)
+    commit = resolve_template_commit(template, checkout=checkout)
     rendered_path_str, context = cookiecutter_interactive(template, output_dir, checkout=checkout)
     rendered_project = Path(rendered_path_str)
 

@@ -3,13 +3,69 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from rebake.utils.git import apply_patch, generate_diff, is_working_tree_clean
+import pytest
+
+from rebake.utils.git import apply_patch, generate_diff, is_working_tree_clean, resolve_template_commit
 
 
 def _init_repo(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True, capture_output=True)
+
+
+@pytest.fixture
+def template_repo(tmp_path: Path) -> tuple[str, str]:
+    """A local git repo with a tag and a branch. Returns (url, head_commit)."""
+    repo = tmp_path / "template"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "file.txt").write_text("v1\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v1.0.0"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "branch", "feature"], cwd=repo, check=True, capture_output=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    return str(repo), head
+
+
+def test_resolve_template_commit_without_checkout(template_repo: tuple[str, str]) -> None:
+    url, head = template_repo
+    assert resolve_template_commit(url) == head
+
+
+def test_resolve_template_commit_with_branch(template_repo: tuple[str, str]) -> None:
+    url, head = template_repo
+    assert resolve_template_commit(url, checkout="feature") == head
+
+
+def test_resolve_template_commit_with_tag(template_repo: tuple[str, str]) -> None:
+    url, head = template_repo
+    assert resolve_template_commit(url, checkout="v1.0.0") == head
+
+
+def test_resolve_template_commit_with_full_sha(template_repo: tuple[str, str]) -> None:
+    url, head = template_repo
+    assert resolve_template_commit(url, checkout=head) == head
+
+
+def test_resolve_template_commit_with_short_sha(template_repo: tuple[str, str]) -> None:
+    url, head = template_repo
+    assert resolve_template_commit(url, checkout=head[:7]) == head
+
+
+def test_resolve_template_commit_with_nonexistent_ref(template_repo: tuple[str, str]) -> None:
+    url, _ = template_repo
+    with pytest.raises(subprocess.CalledProcessError):
+        resolve_template_commit(url, checkout="no-such-ref")
+
+
+def test_resolve_template_commit_with_nonexistent_full_sha(template_repo: tuple[str, str]) -> None:
+    url, _ = template_repo
+    with pytest.raises(subprocess.CalledProcessError):
+        resolve_template_commit(url, checkout="0" * 40)
 
 
 def test_is_working_tree_clean_allows_untracked_when_flag_set(tmp_path: Path) -> None:
