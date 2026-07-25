@@ -8,7 +8,7 @@ from cookiecutter.generate import generate_context, generate_files
 from cookiecutter.prompt import prompt_for_config
 from cookiecutter.repository import determine_repo_dir
 
-from rebake.config import CruftConfig, RebakeConfig
+from rebake.config import RebakeConfig, TemplateEntry
 from rebake.utils.git import get_template_head_commit
 
 
@@ -20,7 +20,7 @@ def cookiecutter_interactive(
     """Run cookiecutter interactively.
 
     Returns (rendered_project_path, cookiecutter_context) so callers can
-    persist the answered values in .cruft.json without a second prompt.
+    persist the answered values in rebake.yaml without a second prompt.
     """
     config_dict = get_user_config()
     repo_dir, cleanup = determine_repo_dir(
@@ -70,7 +70,7 @@ def run_create(
     rendered_path_str, context = cookiecutter_interactive(template, output_dir, checkout=checkout)
     rendered_project = Path(rendered_path_str)
 
-    entry = CruftConfig(
+    entry = TemplateEntry(
         template=template,
         commit=commit,
         context={"cookiecutter": context},

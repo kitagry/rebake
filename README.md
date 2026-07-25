@@ -51,7 +51,7 @@ rebake check [PROJECT_DIR]
 Exit codes:
 - `0` — up-to-date
 - `1` — outdated
-- `2` — error (e.g. `.cruft.json` not found)
+- `2` — error (e.g. neither `rebake.yaml` nor `.cruft.json` found)
 
 > **User-facing change:** the stdout is now reported per template link
 > (`<template> (<target_directory>) is up-to-date.`) instead of the previous

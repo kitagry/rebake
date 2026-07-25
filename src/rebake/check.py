@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from rebake.config import CruftConfig, RebakeConfig
+from rebake.config import RebakeConfig, TemplateEntry
 from rebake.utils.git import get_template_head_commit
 
 
@@ -15,7 +15,7 @@ class CheckResult(Enum):
 
 @dataclass
 class EntryCheck:
-    entry: CruftConfig
+    entry: TemplateEntry
     head_commit: str
     result: CheckResult
 

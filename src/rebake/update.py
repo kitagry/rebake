@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from rebake.config import CruftConfig, RebakeConfig
+from rebake.config import RebakeConfig, TemplateEntry
 from rebake.hooks import run_hooks
 from rebake.utils.git import (
     apply_patch,
@@ -69,7 +69,7 @@ def _apply_checkout_override(config: RebakeConfig, checkout: str) -> None:
 
 
 def _update_entry(
-    entry: CruftConfig,
+    entry: TemplateEntry,
     project_dir: Path,
     config: RebakeConfig,
     *,

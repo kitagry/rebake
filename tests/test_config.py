@@ -3,7 +3,7 @@ import json
 import pytest
 import yaml
 
-from rebake.config import CruftConfig, RebakeConfig
+from rebake.config import RebakeConfig, TemplateEntry
 
 
 def _first(tmp_path):
@@ -77,7 +77,7 @@ def test_load_missing_file(tmp_path):
 def test_save_writes_rebake_yaml(tmp_path):
     config = RebakeConfig(
         templates=[
-            CruftConfig(
+            TemplateEntry(
                 template="https://github.com/owner/template",
                 commit="def456",
                 context={"cookiecutter": {"project_name": "my-project", "author": "Jane"}},
@@ -92,7 +92,7 @@ def test_save_writes_rebake_yaml(tmp_path):
 
 
 def test_save_and_reload(tmp_path):
-    entry = CruftConfig(
+    entry = TemplateEntry(
         template="https://github.com/owner/template",
         commit="def456",
         context={"cookiecutter": {"project_name": "my-project", "author": "Jane"}},
@@ -112,7 +112,7 @@ def test_save_and_reload(tmp_path):
 def test_save_omits_none_checkout(tmp_path):
     RebakeConfig(
         templates=[
-            CruftConfig(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
         ]
     ).save(tmp_path)
 
@@ -127,7 +127,7 @@ def test_save_deletes_cruft_json_if_exists(tmp_path):
 
     RebakeConfig(
         templates=[
-            CruftConfig(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
         ]
     ).save(tmp_path)
 
@@ -137,7 +137,7 @@ def test_save_deletes_cruft_json_if_exists(tmp_path):
 def test_save_japanese_text_not_escaped(tmp_path):
     RebakeConfig(
         templates=[
-            CruftConfig(
+            TemplateEntry(
                 template="https://github.com/owner/template",
                 commit="abc123",
                 context={"cookiecutter": {"project_name": "テストプロジェクト"}},
@@ -182,7 +182,7 @@ def test_load_hooks_defaults_to_empty(tmp_path):
 def test_save_and_reload_with_hooks(tmp_path):
     RebakeConfig(
         templates=[
-            CruftConfig(
+            TemplateEntry(
                 template="https://github.com/owner/template",
                 commit="abc123",
                 context={"cookiecutter": {}},
@@ -197,7 +197,7 @@ def test_save_and_reload_with_hooks(tmp_path):
 def test_save_omits_empty_hooks(tmp_path):
     RebakeConfig(
         templates=[
-            CruftConfig(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
         ]
     ).save(tmp_path)
 
@@ -285,7 +285,7 @@ def test_rebake_config_load_empty_templates_raises(tmp_path):
 def test_rebake_config_save_single_entry_uses_templates_list(tmp_path):
     RebakeConfig(
         templates=[
-            CruftConfig(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
         ]
     ).save(tmp_path)
 
@@ -296,8 +296,8 @@ def test_rebake_config_save_single_entry_uses_templates_list(tmp_path):
 def test_rebake_config_save_multi_entry_uses_templates_list(tmp_path):
     config = RebakeConfig(
         templates=[
-            CruftConfig(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
-            CruftConfig(
+            TemplateEntry(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(
                 template="https://github.com/owner/batch",
                 commit="bbb",
                 context={"cookiecutter": {}},
@@ -320,8 +320,8 @@ def test_rebake_config_save_multi_entry_uses_templates_list(tmp_path):
 def test_rebake_config_save_and_reload_multi(tmp_path):
     config = RebakeConfig(
         templates=[
-            CruftConfig(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
-            CruftConfig(
+            TemplateEntry(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(
                 template="https://github.com/owner/batch",
                 commit="bbb",
                 context={"cookiecutter": {"project_name": "x"}},
@@ -344,8 +344,8 @@ def test_rebake_config_save_multi_deletes_cruft_json(tmp_path):
     (tmp_path / ".cruft.json").write_text(json.dumps({"template": "x", "commit": "y", "context": {}}))
     config = RebakeConfig(
         templates=[
-            CruftConfig(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
-            CruftConfig(template="https://github.com/owner/batch", commit="bbb", context={"cookiecutter": {}}),
+            TemplateEntry(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(template="https://github.com/owner/batch", commit="bbb", context={"cookiecutter": {}}),
         ]
     )
     config.save(tmp_path)
@@ -362,8 +362,8 @@ def test_rebake_config_save_empty_raises(tmp_path):
 def test_entry_name_roundtrips(tmp_path):
     config = RebakeConfig(
         templates=[
-            CruftConfig(template="https://x/a", commit="aaa", context={"cookiecutter": {}}, name="alpha"),
-            CruftConfig(template="https://x/b", commit="bbb", context={"cookiecutter": {}}, name="beta"),
+            TemplateEntry(template="https://x/a", commit="aaa", context={"cookiecutter": {}}, name="alpha"),
+            TemplateEntry(template="https://x/b", commit="bbb", context={"cookiecutter": {}}, name="beta"),
         ]
     )
     config.save(tmp_path)
@@ -378,8 +378,8 @@ def test_entry_name_roundtrips(tmp_path):
 def test_entry_name_omitted_when_absent(tmp_path):
     config = RebakeConfig(
         templates=[
-            CruftConfig(template="https://x/a", commit="aaa", context={"cookiecutter": {}}),
-            CruftConfig(template="https://x/b", commit="bbb", context={"cookiecutter": {}}),
+            TemplateEntry(template="https://x/a", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(template="https://x/b", commit="bbb", context={"cookiecutter": {}}),
         ]
     )
     config.save(tmp_path)
@@ -409,8 +409,8 @@ def test_load_rejects_invalid_names(tmp_path, bad_name):
 
 
 def test_find_by_name_returns_matching_entry():
-    entry_a = CruftConfig(template="https://x/a", commit="aaa", context={}, name="a")
-    entry_b = CruftConfig(template="https://x/b", commit="bbb", context={}, name="b")
+    entry_a = TemplateEntry(template="https://x/a", commit="aaa", context={}, name="a")
+    entry_b = TemplateEntry(template="https://x/b", commit="bbb", context={}, name="b")
     config = RebakeConfig(templates=[entry_a, entry_b])
 
     assert config.find_by_name("b") is entry_b
@@ -419,8 +419,8 @@ def test_find_by_name_returns_matching_entry():
 def test_find_by_name_unknown_lists_available_names():
     config = RebakeConfig(
         templates=[
-            CruftConfig(template="https://x/a", commit="aaa", context={}, name="a"),
-            CruftConfig(template="https://x/b", commit="bbb", context={}, name="b"),
+            TemplateEntry(template="https://x/a", commit="aaa", context={}, name="a"),
+            TemplateEntry(template="https://x/b", commit="bbb", context={}, name="b"),
         ]
     )
     with pytest.raises(RuntimeError, match=r"No template link named 'nope'\. Named links: a, b\."):
@@ -430,8 +430,8 @@ def test_find_by_name_unknown_lists_available_names():
 def test_find_by_name_when_no_named_links():
     config = RebakeConfig(
         templates=[
-            CruftConfig(template="https://x/a", commit="aaa", context={}),
-            CruftConfig(template="https://x/b", commit="bbb", context={}),
+            TemplateEntry(template="https://x/a", commit="aaa", context={}),
+            TemplateEntry(template="https://x/b", commit="bbb", context={}),
         ]
     )
     with pytest.raises(RuntimeError, match="No named links in this repo"):

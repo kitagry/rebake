@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from rebake.config import CruftConfig, RebakeConfig
+from rebake.config import RebakeConfig, TemplateEntry
 from rebake.utils.git import (
     apply_patch,
     clone_at_commit,
@@ -27,7 +27,7 @@ def run_reparametrize(
     """Change template variables and re-apply the diff for each template link.
 
     By default every registered template link is reparametrized in turn. Pass
-    ``name`` to reparametrize only the link whose ``CruftConfig.name`` matches.
+    ``name`` to reparametrize only the link whose ``TemplateEntry.name`` matches.
 
     Raises RuntimeError when the working tree has uncommitted changes, or when
     ``name`` does not match a named link.
@@ -44,7 +44,7 @@ def run_reparametrize(
         _reparametrize_entry(entry, project_dir, config)
 
 
-def _select_entries(config: RebakeConfig, name: str | None) -> list[CruftConfig]:
+def _select_entries(config: RebakeConfig, name: str | None) -> list[TemplateEntry]:
     """Return the template links to reparametrize.
 
     Without ``name`` every link is selected. With ``name`` only the link whose
@@ -56,7 +56,7 @@ def _select_entries(config: RebakeConfig, name: str | None) -> list[CruftConfig]
     return [config.find_by_name(name)]
 
 
-def _reparametrize_entry(entry: CruftConfig, project_dir: Path, config: RebakeConfig) -> None:
+def _reparametrize_entry(entry: TemplateEntry, project_dir: Path, config: RebakeConfig) -> None:
     old_context = entry.context.get("cookiecutter", {})
 
     console.print(f"Reparametrizing [bold]{entry.template}[/bold] ({entry.target_directory}):")

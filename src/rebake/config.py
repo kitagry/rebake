@@ -20,7 +20,7 @@ _NAME_RE = re.compile(r"[a-zA-Z0-9_-]+")
 
 
 @dataclass
-class CruftConfig:
+class TemplateEntry:
     """A single template link.
 
     A repository may register more than one of these (see ``RebakeConfig``);
@@ -48,7 +48,7 @@ class CruftConfig:
     hooks: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CruftConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "TemplateEntry":
         return cls(
             template=data["template"],
             commit=data["commit"],
@@ -85,7 +85,7 @@ class CruftConfig:
 class RebakeConfig:
     """All template links registered in a repository's ``rebake.yaml``."""
 
-    templates: list[CruftConfig]
+    templates: list[TemplateEntry]
 
     def __post_init__(self) -> None:
         # Validate names here so the invariant holds for every RebakeConfig, however
@@ -101,7 +101,7 @@ class RebakeConfig:
                 raise ValueError(f"Duplicate template link name {entry.name!r}: names must be unique.")
             seen.add(entry.name)
 
-    def find_by_name(self, name: str) -> CruftConfig:
+    def find_by_name(self, name: str) -> TemplateEntry:
         """Return the single link whose ``name`` matches, or raise ``RuntimeError``.
 
         Names are unique (enforced in ``__post_init__``), so at most one entry can
@@ -133,11 +133,11 @@ class RebakeConfig:
             entries = data["templates"]
             if not entries:
                 raise ValueError(f"'templates' is empty in {project_dir}; at least one template link is required.")
-            return cls(templates=[CruftConfig.from_dict(entry) for entry in entries])
+            return cls(templates=[TemplateEntry.from_dict(entry) for entry in entries])
 
         # Legacy single-template form (rebake.yaml or .cruft.json): {"template": ...}
         if isinstance(data, dict) and "template" in data:
-            return cls(templates=[CruftConfig.from_dict(data)])
+            return cls(templates=[TemplateEntry.from_dict(data)])
 
         raise ValueError(f"Unrecognized config schema in {project_dir}")
 
