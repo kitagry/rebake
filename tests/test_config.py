@@ -3,7 +3,12 @@ import json
 import pytest
 import yaml
 
-from rebake.config import CruftConfig
+from rebake.config import RebakeConfig, TemplateEntry
+
+
+def _first(tmp_path):
+    """Load the sole template link (single-template helper for tests)."""
+    return RebakeConfig.load(tmp_path).templates[0]
 
 
 def test_load_basic_from_rebake_yaml(tmp_path):
@@ -14,13 +19,13 @@ def test_load_basic_from_rebake_yaml(tmp_path):
     }
     (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
 
-    config = CruftConfig.load(tmp_path)
+    entry = _first(tmp_path)
 
-    assert config.template == "https://github.com/owner/template"
-    assert config.commit == "abc123"
-    assert config.context == {"cookiecutter": {"project_name": "my-project"}}
-    assert config.checkout is None
-    assert config.skip == []
+    assert entry.template == "https://github.com/owner/template"
+    assert entry.commit == "abc123"
+    assert entry.context == {"cookiecutter": {"project_name": "my-project"}}
+    assert entry.checkout is None
+    assert entry.skip == []
 
 
 def test_load_with_checkout_and_skip_from_rebake_yaml(tmp_path):
@@ -33,10 +38,10 @@ def test_load_with_checkout_and_skip_from_rebake_yaml(tmp_path):
     }
     (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
 
-    config = CruftConfig.load(tmp_path)
+    entry = _first(tmp_path)
 
-    assert config.checkout == "main"
-    assert config.skip == ["go.sum", "*.lock"]
+    assert entry.checkout == "main"
+    assert entry.skip == ["go.sum", "*.lock"]
 
 
 def test_load_falls_back_to_cruft_json(tmp_path):
@@ -47,10 +52,10 @@ def test_load_falls_back_to_cruft_json(tmp_path):
     }
     (tmp_path / ".cruft.json").write_text(json.dumps(cruft_data))
 
-    config = CruftConfig.load(tmp_path)
+    entry = _first(tmp_path)
 
-    assert config.template == "https://github.com/owner/template"
-    assert config.commit == "abc123"
+    assert entry.template == "https://github.com/owner/template"
+    assert entry.commit == "abc123"
 
 
 def test_load_prefers_rebake_yaml_over_cruft_json(tmp_path):
@@ -61,23 +66,25 @@ def test_load_prefers_rebake_yaml_over_cruft_json(tmp_path):
         json.dumps({"template": "https://github.com/owner/cruft-template", "commit": "old999", "context": {}})
     )
 
-    config = CruftConfig.load(tmp_path)
-
-    assert config.commit == "new111"
+    assert _first(tmp_path).commit == "new111"
 
 
 def test_load_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
-        CruftConfig.load(tmp_path)
+        RebakeConfig.load(tmp_path)
 
 
 def test_save_writes_rebake_yaml(tmp_path):
-    config = CruftConfig(
-        template="https://github.com/owner/template",
-        commit="def456",
-        context={"cookiecutter": {"project_name": "my-project", "author": "Jane"}},
-        checkout="main",
-        skip=["go.sum"],
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(
+                template="https://github.com/owner/template",
+                commit="def456",
+                context={"cookiecutter": {"project_name": "my-project", "author": "Jane"}},
+                checkout="main",
+                skip=["go.sum"],
+            )
+        ]
     )
     config.save(tmp_path)
 
@@ -85,32 +92,31 @@ def test_save_writes_rebake_yaml(tmp_path):
 
 
 def test_save_and_reload(tmp_path):
-    config = CruftConfig(
+    entry = TemplateEntry(
         template="https://github.com/owner/template",
         commit="def456",
         context={"cookiecutter": {"project_name": "my-project", "author": "Jane"}},
         checkout="main",
         skip=["go.sum"],
     )
-    config.save(tmp_path)
+    RebakeConfig(templates=[entry]).save(tmp_path)
 
-    loaded = CruftConfig.load(tmp_path)
-    assert loaded.template == config.template
-    assert loaded.commit == config.commit
-    assert loaded.context == config.context
-    assert loaded.checkout == config.checkout
-    assert loaded.skip == config.skip
+    loaded = _first(tmp_path)
+    assert loaded.template == entry.template
+    assert loaded.commit == entry.commit
+    assert loaded.context == entry.context
+    assert loaded.checkout == entry.checkout
+    assert loaded.skip == entry.skip
 
 
 def test_save_omits_none_checkout(tmp_path):
-    config = CruftConfig(
-        template="https://github.com/owner/template",
-        commit="abc123",
-        context={"cookiecutter": {}},
-    )
-    config.save(tmp_path)
+    RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+        ]
+    ).save(tmp_path)
 
-    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())["templates"][0]
     assert "checkout" not in raw
     assert "skip" not in raw
 
@@ -119,23 +125,25 @@ def test_save_deletes_cruft_json_if_exists(tmp_path):
     cruft_json = tmp_path / ".cruft.json"
     cruft_json.write_text(json.dumps({"template": "x", "commit": "y", "context": {}}))
 
-    config = CruftConfig(
-        template="https://github.com/owner/template",
-        commit="abc123",
-        context={"cookiecutter": {}},
-    )
-    config.save(tmp_path)
+    RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+        ]
+    ).save(tmp_path)
 
     assert not cruft_json.exists()
 
 
 def test_save_japanese_text_not_escaped(tmp_path):
-    config = CruftConfig(
-        template="https://github.com/owner/template",
-        commit="abc123",
-        context={"cookiecutter": {"project_name": "テストプロジェクト"}},
-    )
-    config.save(tmp_path)
+    RebakeConfig(
+        templates=[
+            TemplateEntry(
+                template="https://github.com/owner/template",
+                commit="abc123",
+                context={"cookiecutter": {"project_name": "テストプロジェクト"}},
+            )
+        ]
+    ).save(tmp_path)
 
     raw_text = (tmp_path / "rebake.yaml").read_text()
     assert "テストプロジェクト" in raw_text
@@ -154,9 +162,7 @@ def test_load_with_hooks_from_rebake_yaml(tmp_path):
     }
     (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
 
-    config = CruftConfig.load(tmp_path)
-
-    assert config.hooks == {
+    assert _first(tmp_path).hooks == {
         "pre-update": ["make lint"],
         "post-update": ["make fmt", "make test"],
     }
@@ -170,31 +176,263 @@ def test_load_hooks_defaults_to_empty(tmp_path):
     }
     (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
 
-    config = CruftConfig.load(tmp_path)
-
-    assert config.hooks == {}
+    assert _first(tmp_path).hooks == {}
 
 
 def test_save_and_reload_with_hooks(tmp_path):
-    config = CruftConfig(
-        template="https://github.com/owner/template",
-        commit="abc123",
-        context={"cookiecutter": {}},
-        hooks={"post-update": ["go generate ./..."]},
-    )
-    config.save(tmp_path)
+    RebakeConfig(
+        templates=[
+            TemplateEntry(
+                template="https://github.com/owner/template",
+                commit="abc123",
+                context={"cookiecutter": {}},
+                hooks={"post-update": ["go generate ./..."]},
+            )
+        ]
+    ).save(tmp_path)
 
-    loaded = CruftConfig.load(tmp_path)
-    assert loaded.hooks == {"post-update": ["go generate ./..."]}
+    assert _first(tmp_path).hooks == {"post-update": ["go generate ./..."]}
 
 
 def test_save_omits_empty_hooks(tmp_path):
-    config = CruftConfig(
-        template="https://github.com/owner/template",
-        commit="abc123",
-        context={"cookiecutter": {}},
+    RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+        ]
+    ).save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())["templates"][0]
+    assert "hooks" not in raw
+
+
+def test_rebake_config_load_multi_form(tmp_path):
+    data = {
+        "templates": [
+            {"template": "https://github.com/owner/common", "commit": "aaa", "context": {"cookiecutter": {}}},
+            {
+                "template": "https://github.com/owner/batch",
+                "commit": "bbb",
+                "context": {"cookiecutter": {}},
+                "target_directory": "batch",
+            },
+        ]
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+
+    config = RebakeConfig.load(tmp_path)
+
+    assert len(config.templates) == 2
+    assert config.templates[0].template == "https://github.com/owner/common"
+    assert config.templates[0].target_directory == "."
+    assert config.templates[1].template == "https://github.com/owner/batch"
+    assert config.templates[1].target_directory == "batch"
+
+
+def test_rebake_config_load_wraps_legacy_single_rebake_yaml(tmp_path):
+    data = {"template": "https://github.com/owner/template", "commit": "abc123", "context": {"cookiecutter": {}}}
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+
+    config = RebakeConfig.load(tmp_path)
+
+    assert len(config.templates) == 1
+    assert config.templates[0].template == "https://github.com/owner/template"
+    assert config.templates[0].target_directory == "."
+
+
+def test_rebake_config_load_wraps_legacy_cruft_json(tmp_path):
+    data = {"template": "https://github.com/owner/template", "commit": "abc123", "context": {"cookiecutter": {}}}
+    (tmp_path / ".cruft.json").write_text(json.dumps(data))
+
+    config = RebakeConfig.load(tmp_path)
+
+    assert len(config.templates) == 1
+    assert config.templates[0].target_directory == "."
+
+
+def test_cruft_json_directory_key_is_ignored(tmp_path):
+    # cruft's `directory` means a sub-directory INSIDE the template repo, the
+    # opposite of rebake's output-side `target_directory`. It must be ignored,
+    # otherwise patches would be applied to the wrong place.
+    data = {
+        "template": "https://github.com/owner/template",
+        "commit": "abc123",
+        "context": {"cookiecutter": {}},
+        "directory": "some-template-subdir",
+    }
+    (tmp_path / ".cruft.json").write_text(json.dumps(data))
+
+    entry = RebakeConfig.load(tmp_path).templates[0]
+
+    assert entry.target_directory == "."
+    assert tmp_path / entry.target_directory == tmp_path
+
+
+def test_rebake_config_load_unrecognized_schema_raises(tmp_path):
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"unexpected": "shape"}))
+
+    with pytest.raises(ValueError):
+        RebakeConfig.load(tmp_path)
+
+
+def test_rebake_config_load_empty_templates_raises(tmp_path):
+    # Symmetric with save(): an empty list must not silently read as up-to-date.
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": []}))
+
+    with pytest.raises(ValueError):
+        RebakeConfig.load(tmp_path)
+
+
+def test_rebake_config_save_single_entry_uses_templates_list(tmp_path):
+    RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://github.com/owner/template", commit="abc123", context={"cookiecutter": {}})
+        ]
+    ).save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert [entry["template"] for entry in raw["templates"]] == ["https://github.com/owner/template"]
+
+
+def test_rebake_config_save_multi_entry_uses_templates_list(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(
+                template="https://github.com/owner/batch",
+                commit="bbb",
+                context={"cookiecutter": {}},
+                target_directory="batch",
+            ),
+        ]
     )
     config.save(tmp_path)
 
     raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
-    assert "hooks" not in raw
+    assert [entry["template"] for entry in raw["templates"]] == [
+        "https://github.com/owner/common",
+        "https://github.com/owner/batch",
+    ]
+    # target_directory "." is omitted, non-default is kept
+    assert "target_directory" not in raw["templates"][0]
+    assert raw["templates"][1]["target_directory"] == "batch"
+
+
+def test_rebake_config_save_and_reload_multi(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(
+                template="https://github.com/owner/batch",
+                commit="bbb",
+                context={"cookiecutter": {"project_name": "x"}},
+                checkout="main",
+                target_directory="batch",
+                hooks={"post-update": ["make fmt"]},
+            ),
+        ]
+    )
+    config.save(tmp_path)
+
+    loaded = RebakeConfig.load(tmp_path)
+    assert len(loaded.templates) == 2
+    assert loaded.templates[1].checkout == "main"
+    assert loaded.templates[1].target_directory == "batch"
+    assert loaded.templates[1].hooks == {"post-update": ["make fmt"]}
+
+
+def test_rebake_config_save_multi_deletes_cruft_json(tmp_path):
+    (tmp_path / ".cruft.json").write_text(json.dumps({"template": "x", "commit": "y", "context": {}}))
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://github.com/owner/common", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(template="https://github.com/owner/batch", commit="bbb", context={"cookiecutter": {}}),
+        ]
+    )
+    config.save(tmp_path)
+
+    assert not (tmp_path / ".cruft.json").exists()
+
+
+def test_rebake_config_save_empty_raises(tmp_path):
+    config = RebakeConfig(templates=[])
+    with pytest.raises(ValueError):
+        config.save(tmp_path)
+
+
+def test_entry_name_roundtrips(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://x/a", commit="aaa", context={"cookiecutter": {}}, name="alpha"),
+            TemplateEntry(template="https://x/b", commit="bbb", context={"cookiecutter": {}}, name="beta"),
+        ]
+    )
+    config.save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert [entry["name"] for entry in raw["templates"]] == ["alpha", "beta"]
+
+    loaded = RebakeConfig.load(tmp_path)
+    assert [entry.name for entry in loaded.templates] == ["alpha", "beta"]
+
+
+def test_entry_name_omitted_when_absent(tmp_path):
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://x/a", commit="aaa", context={"cookiecutter": {}}),
+            TemplateEntry(template="https://x/b", commit="bbb", context={"cookiecutter": {}}),
+        ]
+    )
+    config.save(tmp_path)
+
+    raw = yaml.safe_load((tmp_path / "rebake.yaml").read_text())
+    assert all("name" not in entry for entry in raw["templates"])
+
+
+def test_load_rejects_duplicate_names(tmp_path):
+    data = {
+        "templates": [
+            {"template": "https://x/a", "commit": "aaa", "context": {}, "name": "go"},
+            {"template": "https://x/b", "commit": "bbb", "context": {}, "name": "go"},
+        ]
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data))
+    with pytest.raises(ValueError, match="Duplicate template link name 'go'"):
+        RebakeConfig.load(tmp_path)
+
+
+@pytest.mark.parametrize("bad_name", ["foo@bar", "", "has space", "go\n"])
+def test_load_rejects_invalid_names(tmp_path, bad_name):
+    data = {"templates": [{"template": "https://x/a", "commit": "aaa", "context": {}, "name": bad_name}]}
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data))
+    with pytest.raises(ValueError, match="names must match"):
+        RebakeConfig.load(tmp_path)
+
+
+def test_find_by_name_returns_matching_entry():
+    entry_a = TemplateEntry(template="https://x/a", commit="aaa", context={}, name="a")
+    entry_b = TemplateEntry(template="https://x/b", commit="bbb", context={}, name="b")
+    config = RebakeConfig(templates=[entry_a, entry_b])
+
+    assert config.find_by_name("b") is entry_b
+
+
+def test_find_by_name_unknown_lists_available_names():
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://x/a", commit="aaa", context={}, name="a"),
+            TemplateEntry(template="https://x/b", commit="bbb", context={}, name="b"),
+        ]
+    )
+    with pytest.raises(RuntimeError, match=r"No template link named 'nope'\. Named links: a, b\."):
+        config.find_by_name("nope")
+
+
+def test_find_by_name_when_no_named_links():
+    config = RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://x/a", commit="aaa", context={}),
+            TemplateEntry(template="https://x/b", commit="bbb", context={}),
+        ]
+    )
+    with pytest.raises(RuntimeError, match="No named links in this repo"):
+        config.find_by_name("a")

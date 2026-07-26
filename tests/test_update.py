@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from rebake.update import run_update
 
@@ -62,9 +63,9 @@ def test_update_saves_new_commit_and_context(tmp_path):
     ):
         run_update(project_dir)
 
-    from rebake.config import CruftConfig
+    from rebake.config import RebakeConfig
 
-    updated = CruftConfig.load(project_dir)
+    updated = RebakeConfig.load(project_dir).templates[0]
     assert updated.commit == "def456"
     assert updated.context["cookiecutter"]["license"] == "Apache-2.0"
 
@@ -286,7 +287,7 @@ def test_update_post_hook_runs_after_config_save(tmp_path):
         patch("rebake.update.prompt_new_variables"),
         patch("rebake.update.generate_diff", return_value=""),
         patch("rebake.update.apply_patch", return_value=(True, "")),
-        patch("rebake.config.CruftConfig.save", side_effect=record_save),
+        patch("rebake.config.RebakeConfig.save", side_effect=record_save),
         patch("rebake.update.run_hooks", side_effect=record_hook),
     ):
         run_update(project_dir)
@@ -316,9 +317,9 @@ def test_update_with_checkout_advances_to_that_ref(tmp_path):
 
     mock_head.assert_called_once_with("https://github.com/owner/template", checkout=midway_ref)
 
-    from rebake.config import CruftConfig
+    from rebake.config import RebakeConfig
 
-    updated = CruftConfig.load(project_dir)
+    updated = RebakeConfig.load(project_dir).templates[0]
     assert updated.checkout == midway_ref
 
 
@@ -368,3 +369,84 @@ def test_update_aborts_if_post_hook_fails(tmp_path):
     ):
         with pytest.raises(RuntimeError, match="post hook failed"):
             run_update(project_dir)
+
+
+def make_multi_project(tmp_path: Path) -> Path:
+    (tmp_path / "rebake.yaml").write_text(
+        yaml.dump(
+            {
+                "templates": [
+                    {
+                        "template": "https://x/common",
+                        "commit": "aaa",
+                        "name": "common",
+                        "context": {"cookiecutter": {}},
+                    },
+                    {
+                        "template": "https://x/go",
+                        "commit": "bbb",
+                        "name": "go",
+                        "target_directory": "api",
+                        "context": {"cookiecutter": {}},
+                    },
+                ]
+            }
+        )
+    )
+    (tmp_path / ".git").mkdir()
+    return tmp_path
+
+
+def test_update_checkout_targets_named_entry_in_multi(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+    seen: dict[str, str | None] = {}
+
+    def fake_head(template, checkout=None):
+        seen[template] = checkout
+        return {"https://x/common": "aaa", "https://x/go": "bbb"}[template]
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.get_template_head_commit", side_effect=fake_head),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+    ):
+        run_update(project_dir, checkout="go@main")
+
+    # only the `go` link's checkout is overridden
+    assert seen["https://x/go"] == "main"
+    assert seen["https://x/common"] is None
+
+    saved = yaml.safe_load((project_dir / "rebake.yaml").read_text())
+    go = next(entry for entry in saved["templates"] if entry["name"] == "go")
+    assert go["checkout"] == "main"
+    common = next(entry for entry in saved["templates"] if entry["name"] == "common")
+    assert "checkout" not in common
+
+
+def test_update_checkout_without_name_on_multi_raises(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+
+    with patch("rebake.update.is_working_tree_clean", return_value=True):
+        with pytest.raises(RuntimeError, match="ambiguous"):
+            run_update(project_dir, checkout="main")
+
+
+def test_update_checkout_empty_ref_on_multi_raises(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+
+    with patch("rebake.update.is_working_tree_clean", return_value=True):
+        with pytest.raises(RuntimeError, match="ambiguous"):
+            run_update(project_dir, checkout="go@")
+
+
+def test_update_checkout_unknown_name_on_multi_raises(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+
+    with patch("rebake.update.is_working_tree_clean", return_value=True):
+        with pytest.raises(RuntimeError, match="nope"):
+            run_update(project_dir, checkout="nope@main")

@@ -116,5 +116,6 @@ def test_update_with_checkout_stops_at_midway_commit(project_dir: Path, template
 
     import yaml
 
+    # update rewrites the legacy top-level fixture into the templates: list form.
     config = yaml.safe_load((project_dir / "rebake.yaml").read_text())
-    assert config["checkout"] == "v1"
+    assert config["templates"][0]["checkout"] == "v1"

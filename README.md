@@ -40,7 +40,9 @@ uv add rebake
 
 ### `rebake check`
 
-Check whether the project is up-to-date with its template.
+Check whether the project is up-to-date with its template(s). When a repository
+tracks [multiple templates](#multiple-templates), every one is checked and the
+command reports each; it exits non-zero if any is outdated.
 
 ```bash
 rebake check [PROJECT_DIR]
@@ -49,7 +51,13 @@ rebake check [PROJECT_DIR]
 Exit codes:
 - `0` — up-to-date
 - `1` — outdated
-- `2` — error (e.g. `.cruft.json` not found)
+- `2` — error (e.g. neither `rebake.yaml` nor `.cruft.json` found)
+
+> **User-facing change:** the stdout is now reported per template link
+> (`<template> (<target_directory>) is up-to-date.`) instead of the previous
+> single `Project is up-to-date.` / `Project is outdated.`. Exit codes are
+> unchanged, so CI gates keep working, but scripts that grep this stdout need
+> updating.
 
 ### `rebake update`
 
@@ -74,7 +82,7 @@ rebake will:
 |---|---|
 | `--allow-untracked-files` | Allow update even if untracked files exist (no other changes) |
 | `--quiet` | Disable interactive prompts; exit 1 if new variables are found without a supplied value |
-| `--checkout`, `-c` | Branch, tag or commit to follow |
+| `--checkout`, `-c` | Branch, tag or commit to follow. On a [multi-template](#multiple-templates) repo, use `<name>@<ref>` (e.g. `go@main`) to target the link named `go`; a bare `<ref>` is rejected as ambiguous |
 
 #### Hooks
 
@@ -96,7 +104,11 @@ Hooks run in the project directory with the following environment variables avai
 | `REBAKE_TEMPLATE` | Template repository URL |
 | `REBAKE_OLD_COMMIT` | Commit hash before the update |
 | `REBAKE_NEW_COMMIT` | Commit hash after the update |
-| `REBAKE_PROJECT_DIR` | Absolute path to the project directory |
+| `REBAKE_PROJECT_DIR` | Absolute path to the repository root |
+| `REBAKE_TARGET_DIR` | Absolute path to this template's target directory (`REBAKE_PROJECT_DIR/<target_directory>`) |
+
+For multi-template repositories, hooks run once per template link with the
+working directory set to that link's target directory.
 
 #### Non-interactive usage (e.g. from an LLM agent)
 
@@ -108,6 +120,20 @@ rebake update --quiet
 ```
 
 When `--quiet` is used and new variables are found, rebake prints each variable name and its default value to stderr, then exits with code 1.
+
+## Multiple templates
+
+A single repository can track more than one cookiecutter template — for example
+a shared CI/config template at the root plus one language scaffold per
+sub-directory. Each template link (an entry in the `templates:` list) records
+its own `commit` and a `target_directory` (the sub-path its patches apply to).
+`rebake check` and `rebake update` operate on every link; `update` applies each
+template's diff into its own `target_directory`.
+
+Every link is self-contained: `context`, `checkout`, `skip` and `hooks` are all
+per-entry, so each template keeps its own variables and hooks.
+
+Add a link by adding an entry to the `templates:` list in `rebake.yaml`.
 
 ## Migrating from cruft
 
@@ -125,22 +151,60 @@ rebake update
 
 ## `rebake.yaml` format
 
+rebake writes the `templates:` list form (one entry per template link, even
+when there is only one):
+
+```yaml
+templates:
+  - template: https://github.com/owner/cookiecutter-common
+    commit: aaa111...
+    name: common            # optional: label to target this link from the CLI
+    checkout: main          # optional: branch/tag/commit to track
+    context:
+      cookiecutter:
+        project_name: my-repo
+        author: Jane Doe
+    skip:                   # optional: file patterns to skip
+      - go.sum
+      - "*.lock"
+    hooks:                  # optional: shell commands to run on update
+      pre-update:
+        - make lint
+      post-update:
+        - make fmt
+    # target_directory defaults to "." (repository root)
+  - template: https://github.com/owner/cookiecutter-go
+    commit: bbb222...
+    name: go
+    target_directory: api   # this link's patches apply under api/
+    context:
+      cookiecutter:
+        project_name: my-repo
+```
+
+`target_directory` is the sub-path within your repository that the link's
+patches apply to (defaults to `.`). It is intentionally **not** named
+`directory`: cruft's `.cruft.json` uses `directory` for the opposite thing (a
+sub-directory *inside the template repo*), so rebake ignores that key on read
+and reserves the name.
+
+`name` is an optional label for a link. On a multi-template repo it lets you
+target one link from the CLI, e.g. `rebake update --checkout go@main` follows
+`main` only for the link named `go`.
+
+### Legacy formats (read-only)
+
+For backward compatibility, rebake also reads the older single-template
+top-level form and a cruft `.cruft.json` with the same keys. The next
+`rebake update` rewrites the file into the `templates:` list form above.
+
 ```yaml
 template: https://github.com/owner/template
 commit: abc123...
-checkout: main          # optional: branch/tag/commit to track
+checkout: main
 context:
   cookiecutter:
     project_name: my-project
-    author: Jane Doe
-skip:                   # optional: file patterns to skip
-  - go.sum
-  - "*.lock"
-hooks:                  # optional: shell commands to run on update
-  pre-update:
-    - make lint
-  post-update:
-    - make fmt
 ```
 
 ## Development

@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from rebake.check import CheckResult, is_up_to_date
+from rebake.check import CheckResult, check_entries
 
 app = typer.Typer(help="A spiritual successor to cruft for managing cookiecutter projects.")
 console = Console()
@@ -33,19 +33,23 @@ def create(
 def check(
     project_dir: Path = typer.Argument(Path("."), help="Path to the project directory"),
 ) -> None:
-    """Check if the project is up-to-date with its template."""
+    """Check if every registered template link is up-to-date."""
     try:
-        result = is_up_to_date(project_dir)
-    except FileNotFoundError as e:
+        checks = check_entries(project_dir)
+    except (FileNotFoundError, ValueError) as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=2)
 
-    if result == CheckResult.UP_TO_DATE:
-        console.print("[green]✓[/green] Project is up-to-date.")
-        raise typer.Exit(code=0)
-    else:
-        console.print("[yellow]![/yellow] Project is outdated.")
-        raise typer.Exit(code=1)
+    outdated = [c for c in checks if c.result == CheckResult.OUTDATED]
+    for c in checks:
+        if c.result == CheckResult.UP_TO_DATE:
+            console.print(f"[green]✓[/green] {c.entry.template} ({c.entry.target_directory}) is up-to-date.")
+        else:
+            console.print(
+                f"[yellow]![/yellow] {c.entry.template} ({c.entry.target_directory}) is outdated: "
+                f"[cyan]{c.entry.commit[:8]}[/cyan] → [cyan]{c.head_commit[:8]}[/cyan]"
+            )
+    raise typer.Exit(code=1 if outdated else 0)
 
 
 @app.command()
@@ -56,12 +60,18 @@ def reparametrize(
         "--allow-untracked-files",
         help="Allow reparametrize even if there are untracked files in the git repository (but no other changes)",
     ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Reparametrize only the template link with this name. Defaults to all links.",
+    ),
 ) -> None:
     """Change template variables and re-apply the diff."""
     from rebake.reparametrize import run_reparametrize
 
     try:
-        run_reparametrize(project_dir, allow_untracked_files=allow_untracked_files)
+        run_reparametrize(project_dir, allow_untracked_files=allow_untracked_files, name=name)
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)
@@ -85,7 +95,7 @@ def update(
         None,
         "--checkout",
         "-c",
-        help="Branch, tag or commit to follow.",
+        help="Branch, tag or commit to follow. On a multi-template repo, use <name>@<ref> to target one link.",
     ),
 ) -> None:
     """Apply the latest template changes to the project."""
