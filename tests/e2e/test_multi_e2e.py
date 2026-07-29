@@ -205,7 +205,7 @@ def test_add_second_template_becomes_multi_and_renders_subdir(tmp_path: Path) ->
 
 
 @pytest.mark.e2e
-def test_add_rejects_target_escaping_repo(tmp_path: Path) -> None:
+def test_add_rejects_target_outside_repo(tmp_path: Path) -> None:
     template = _make_template_repo(tmp_path / "template")
     repo = tmp_path / "repo"
     repo.mkdir()

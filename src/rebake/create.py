@@ -98,11 +98,11 @@ def run_add(
     """
     project_dir = project_dir.resolve()
     target = project_dir / target_directory
-    # The entry must live under the repository: reject a target that escapes it
-    # (e.g. `-t ../foo` or an absolute path), which a later `update` would
-    # otherwise re-render outside project_dir.
+    # The entry must live under the repository: reject a target that is outside
+    # project_dir (e.g. `-t ../foo` or an absolute path), which a later `update`
+    # would otherwise re-render outside project_dir.
     if not target.resolve().is_relative_to(project_dir):
-        raise ValueError(f"target_directory {target_directory!r} escapes the repository root {project_dir}.")
+        raise ValueError(f"target_directory {target_directory!r} is outside the repository root {project_dir}.")
 
     # Load (or start) the config before writing anything. A missing
     # rebake.yaml/.cruft.json starts a fresh config; an existing but malformed
