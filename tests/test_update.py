@@ -35,7 +35,7 @@ def test_update_detects_new_variables_and_prompts(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={"license": "MIT"}),
@@ -53,7 +53,7 @@ def test_update_saves_new_commit_and_context(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={"license": "MIT"}),
@@ -75,7 +75,7 @@ def test_update_skips_prompt_when_no_new_variables(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -94,7 +94,7 @@ def test_update_applies_patch(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -113,7 +113,7 @@ def test_update_passes_allow_untracked_files_flag_to_git_check(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True) as mock_clean,
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -132,7 +132,7 @@ def test_update_quiet_mode_raises_when_new_variables(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={"license": "MIT"}),
@@ -151,7 +151,7 @@ def test_update_quiet_mode_succeeds_when_no_new_variables(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -165,7 +165,7 @@ def test_update_quiet_mode_succeeds_when_no_new_variables(tmp_path):
 def _patch_update_internals(**overrides):
     defaults = dict(
         is_working_tree_clean=True,
-        get_template_head_commit="def456",
+        resolve_template_commit="def456",
         clone_at_commit=None,
         render_template=Path("/tmp/rendered"),
         detect_new_variables={},
@@ -192,7 +192,7 @@ def test_update_runs_pre_update_hook(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -222,7 +222,7 @@ def test_update_runs_post_update_hook(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -251,7 +251,7 @@ def test_update_pre_hook_runs_before_patch(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -280,7 +280,7 @@ def test_update_post_hook_runs_after_config_save(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -305,7 +305,7 @@ def test_update_with_checkout_advances_to_that_ref(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value=head_ref) as mock_head,
+        patch("rebake.update.resolve_template_commit", return_value=head_ref) as mock_resolve,
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -315,7 +315,7 @@ def test_update_with_checkout_advances_to_that_ref(tmp_path):
     ):
         run_update(project_dir, checkout=midway_ref)
 
-    mock_head.assert_called_once_with("https://github.com/owner/template", checkout=midway_ref)
+    mock_resolve.assert_called_once_with("https://github.com/owner/template", checkout=midway_ref)
 
     from rebake.config import RebakeConfig
 
@@ -328,7 +328,7 @@ def test_update_aborts_if_pre_hook_fails(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -353,7 +353,7 @@ def test_update_aborts_if_post_hook_fails(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", return_value="def456"),
+        patch("rebake.update.resolve_template_commit", return_value="def456"),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
@@ -407,7 +407,7 @@ def test_update_checkout_targets_named_entry_in_multi(tmp_path):
 
     with (
         patch("rebake.update.is_working_tree_clean", return_value=True),
-        patch("rebake.update.get_template_head_commit", side_effect=fake_head),
+        patch("rebake.update.resolve_template_commit", side_effect=fake_head),
         patch("rebake.update.clone_at_commit"),
         patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
         patch("rebake.update.detect_new_variables", return_value={}),
