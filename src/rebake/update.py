@@ -11,8 +11,8 @@ from rebake.utils.git import (
     apply_patch,
     clone_at_commit,
     generate_diff,
-    get_template_head_commit,
     is_working_tree_clean,
+    resolve_template_commit,
 )
 from rebake.utils.template import render_template
 from rebake.utils.variables import detect_new_variables, prompt_new_variables
@@ -80,7 +80,7 @@ def _update_entry(
     # it so apply_patch's `git rev-parse` (run from target) does not fail obscurely.
     target.mkdir(parents=True, exist_ok=True)
     old_commit = entry.commit
-    new_commit = get_template_head_commit(entry.template, checkout=entry.checkout)
+    new_commit = resolve_template_commit(entry.template, checkout=entry.checkout)
 
     console.print(
         f"Updating [bold]{entry.template}[/bold] ({entry.target_directory}): "

@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 
-def get_template_head_commit(template_url: str, checkout: str | None = None) -> str:
+def resolve_template_commit(template_url: str, checkout: str | None = None) -> str:
     """Return the HEAD commit hash of a remote template repository.
 
     Uses git ls-remote for speed, avoiding a full clone.

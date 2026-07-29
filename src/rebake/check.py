@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 
 from rebake.config import RebakeConfig, TemplateEntry
-from rebake.utils.git import get_template_head_commit
+from rebake.utils.git import resolve_template_commit
 
 
 class CheckResult(Enum):
@@ -25,7 +25,7 @@ def check_entries(project_dir: Path = Path(".")) -> list[EntryCheck]:
     config = RebakeConfig.load(project_dir)
     checks: list[EntryCheck] = []
     for entry in config.templates:
-        head_commit = get_template_head_commit(entry.template, checkout=entry.checkout)
+        head_commit = resolve_template_commit(entry.template, checkout=entry.checkout)
         result = CheckResult.UP_TO_DATE if entry.commit == head_commit else CheckResult.OUTDATED
         checks.append(EntryCheck(entry=entry, head_commit=head_commit, result=result))
     return checks

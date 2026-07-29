@@ -14,7 +14,7 @@ def test_create_renders_template_and_writes_rebake_yaml(tmp_path):
     rendered_project.mkdir()
 
     with (
-        patch("rebake.create.get_template_head_commit", return_value="abc123"),
+        patch("rebake.create.resolve_template_commit", return_value="abc123"),
         patch(
             "rebake.create.cookiecutter_interactive",
             return_value=(str(rendered_project), {"project_name": "my-project"}),
@@ -38,7 +38,7 @@ def test_create_uses_checkout(tmp_path):
     rendered_project.mkdir()
 
     with (
-        patch("rebake.create.get_template_head_commit", return_value="def456") as mock_commit,
+        patch("rebake.create.resolve_template_commit", return_value="def456") as mock_commit,
         patch(
             "rebake.create.cookiecutter_interactive",
             return_value=(str(rendered_project), {"project_name": "my-project"}),
@@ -58,7 +58,7 @@ def test_create_saves_context_from_cookiecutter(tmp_path):
     rendered_project.mkdir()
 
     with (
-        patch("rebake.create.get_template_head_commit", return_value="abc123"),
+        patch("rebake.create.resolve_template_commit", return_value="abc123"),
         patch(
             "rebake.create.cookiecutter_interactive",
             return_value=(str(rendered_project), {"project_name": "my-project", "author": "me"}),
@@ -78,7 +78,7 @@ def test_create_without_checkout_omits_field(tmp_path):
     rendered_project.mkdir()
 
     with (
-        patch("rebake.create.get_template_head_commit", return_value="abc123"),
+        patch("rebake.create.resolve_template_commit", return_value="abc123"),
         patch(
             "rebake.create.cookiecutter_interactive",
             return_value=(str(rendered_project), {"project_name": "my-project"}),
