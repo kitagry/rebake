@@ -30,6 +30,26 @@ def create(
 
 
 @app.command()
+def add(
+    template: str = typer.Argument(..., help="URL or path to the cookiecutter template"),
+    project_dir: Path = typer.Option(Path("."), "--project-dir", "-p", help="Repository root to register into"),
+    target_directory: str = typer.Option(
+        ".", "--target-directory", "-t", help="Sub-path within the repo to render into"
+    ),
+    checkout: str | None = typer.Option(None, "--checkout", "-c", help="Branch, tag or commit to use"),
+) -> None:
+    """Register and render an additional cookiecutter template into this repository."""
+    from rebake.create import run_add
+
+    try:
+        entry = run_add(template, project_dir=project_dir, target_directory=target_directory, checkout=checkout)
+        console.print(f"[green]✓[/green] Added [bold]{entry.template}[/bold] at [bold]{entry.target_directory}[/bold]")
+    except Exception as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def check(
     project_dir: Path = typer.Argument(Path("."), help="Path to the project directory"),
 ) -> None:

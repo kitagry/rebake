@@ -164,3 +164,55 @@ def test_multi_update_checkout_targets_named_entry(tmp_path: Path) -> None:
     a_entry = next(e for e in data["templates"] if e["name"] == "a")
     assert a_entry["checkout"] == "v1"
     assert a_entry["commit"] == c1
+
+
+@pytest.mark.e2e
+def test_add_creates_single_form_and_strips_wrapper(tmp_path: Path) -> None:
+    template = _make_template_repo(tmp_path / "template")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    result = runner.invoke(app, ["add", str(template), "-p", str(repo), "-t", "."], input="my-project\n")
+
+    assert result.exit_code == 0, result.output
+    # cookiecutter's project-name wrapper is stripped: files land at repo root
+    assert (repo / "README.md").exists()
+    assert not (repo / "my-project").exists()
+
+    # A single link is still written in the `templates:` list form.
+    data = yaml.safe_load((repo / "rebake.yaml").read_text())
+    assert [entry["template"] for entry in data["templates"]] == [str(template)]
+
+
+@pytest.mark.e2e
+def test_add_second_template_becomes_multi_and_renders_subdir(tmp_path: Path) -> None:
+    template_a = _make_template_repo(tmp_path / "template_a")
+    template_b = _make_template_repo(tmp_path / "template_b")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    r1 = runner.invoke(app, ["add", str(template_a), "-p", str(repo), "-t", "."], input="proj-a\n")
+    assert r1.exit_code == 0, r1.output
+    r2 = runner.invoke(app, ["add", str(template_b), "-p", str(repo), "-t", "batch"], input="proj-b\n")
+    assert r2.exit_code == 0, r2.output
+
+    # second add renders into the subdir
+    assert (repo / "batch" / "README.md").exists()
+
+    data = yaml.safe_load((repo / "rebake.yaml").read_text())
+    assert [entry["template"] for entry in data["templates"]] == [str(template_a), str(template_b)]
+    assert data["templates"][1]["target_directory"] == "batch"
+
+
+@pytest.mark.e2e
+def test_add_rejects_target_outside_repo(tmp_path: Path) -> None:
+    template = _make_template_repo(tmp_path / "template")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    result = runner.invoke(app, ["add", str(template), "-p", str(repo), "-t", "../escape"])
+
+    assert result.exit_code == 1
+    # The guard fires before rendering, so nothing is written outside the repo.
+    assert not (tmp_path / "escape").exists()
+    assert not (repo / "rebake.yaml").exists()
