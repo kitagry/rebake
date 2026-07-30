@@ -167,6 +167,64 @@ def test_multi_update_checkout_targets_named_entry(tmp_path: Path) -> None:
 
 
 @pytest.mark.e2e
+def test_multi_update_name_scopes_to_selected_link(tmp_path: Path) -> None:
+    template_a = _make_template_repo(tmp_path / "template_a")
+    template_b = _make_template_repo(tmp_path / "template_b")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    a0 = _head_commit(template_a)
+    _render_into(template_a, repo, "proj-a", tmp_path)
+    _render_into(template_b, repo / "b", "proj-b", tmp_path)
+    (repo / "rebake.yaml").write_text(
+        yaml.dump(
+            {
+                "templates": [
+                    {
+                        "template": str(template_a),
+                        "commit": a0,
+                        "name": "a",
+                        "context": {"cookiecutter": {"project_name": "proj-a"}},
+                    },
+                    {
+                        "template": str(template_b),
+                        "commit": _head_commit(template_b),
+                        "name": "b",
+                        "target_directory": "b",
+                        "context": {"cookiecutter": {"project_name": "proj-b"}},
+                    },
+                ]
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        )
+    )
+
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@test.com"], repo)
+    _git(["config", "user.name", "Test"], repo)
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "init repo"], repo)
+
+    # Advance BOTH templates so an unscoped update would touch both links.
+    for template, fname in ((template_a, "newa.txt"), (template_b, "newb.txt")):
+        (template / "{{cookiecutter.project_name}}" / fname).write_text("x\n")
+        _git(["add", "."], template)
+        _git(["commit", "-m", f"add {fname}"], template)
+
+    result = runner.invoke(app, ["update", str(repo), "--name", "b"])
+    assert result.exit_code == 0, result.output
+
+    # Only link "b" is updated: its new file lands under b/, "a" is left alone.
+    assert (repo / "b" / "newb.txt").read_text() == "x\n"
+    assert not (repo / "newa.txt").exists()
+
+    data = {e["name"]: e for e in yaml.safe_load((repo / "rebake.yaml").read_text())["templates"]}
+    assert data["b"]["commit"] == _head_commit(template_b)
+    assert data["a"]["commit"] == a0
+
+
+@pytest.mark.e2e
 def test_add_creates_single_form_and_strips_wrapper(tmp_path: Path) -> None:
     template = _make_template_repo(tmp_path / "template")
     repo = tmp_path / "repo"

@@ -450,3 +450,70 @@ def test_update_checkout_unknown_name_on_multi_raises(tmp_path):
     with patch("rebake.update.is_working_tree_clean", return_value=True):
         with pytest.raises(RuntimeError, match="nope"):
             run_update(project_dir, checkout="nope@main")
+
+
+def test_update_names_scopes_to_selected_entry(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+    processed: list[str] = []
+
+    def fake_head(template, checkout=None):
+        processed.append(template)
+        return {"https://x/common": "aaa", "https://x/go": "newgo"}[template]
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.resolve_template_commit", side_effect=fake_head),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+    ):
+        run_update(project_dir, names=["go"])
+
+    # only the `go` link is touched; `common` is never even resolved
+    assert processed == ["https://x/go"]
+    saved = {e["name"]: e for e in yaml.safe_load((project_dir / "rebake.yaml").read_text())["templates"]}
+    assert saved["go"]["commit"] == "newgo"
+    assert saved["common"]["commit"] == "aaa"
+
+
+def test_update_names_unknown_raises(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+
+    with patch("rebake.update.is_working_tree_clean", return_value=True):
+        with pytest.raises(RuntimeError, match="nope"):
+            run_update(project_dir, names=["nope"])
+
+
+def test_update_name_and_checkout_same_link_composes(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+    processed: list[tuple[str, str | None]] = []
+
+    def fake_head(template, checkout=None):
+        processed.append((template, checkout))
+        return {"https://x/common": "aaa", "https://x/go": "newgo"}[template]
+
+    with (
+        patch("rebake.update.is_working_tree_clean", return_value=True),
+        patch("rebake.update.resolve_template_commit", side_effect=fake_head),
+        patch("rebake.update.clone_at_commit"),
+        patch("rebake.update.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.update.detect_new_variables", return_value={}),
+        patch("rebake.update.prompt_new_variables"),
+        patch("rebake.update.generate_diff", return_value=""),
+        patch("rebake.update.apply_patch", return_value=(True, "")),
+    ):
+        run_update(project_dir, names=["go"], checkout="go@main")
+
+    # `--name go --checkout go@main` compose: only `go` runs, at ref `main`
+    assert processed == [("https://x/go", "main")]
+
+
+def test_update_name_and_checkout_different_links_raises(tmp_path):
+    project_dir = make_multi_project(tmp_path)
+
+    with patch("rebake.update.is_working_tree_clean", return_value=True):
+        with pytest.raises(RuntimeError, match="does not select"):
+            run_update(project_dir, names=["common"], checkout="go@main")

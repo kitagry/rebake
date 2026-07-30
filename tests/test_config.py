@@ -436,3 +436,36 @@ def test_find_by_name_when_no_named_links():
     )
     with pytest.raises(RuntimeError, match="No named links in this repo"):
         config.find_by_name("a")
+
+
+def _named_config() -> RebakeConfig:
+    return RebakeConfig(
+        templates=[
+            TemplateEntry(template="https://x/a", commit="aaa", context={}, name="a"),
+            TemplateEntry(template="https://x/b", commit="bbb", context={}, name="b"),
+            TemplateEntry(template="https://x/c", commit="ccc", context={}, name="c"),
+        ]
+    )
+
+
+@pytest.mark.parametrize("names", [None, []])
+def test_select_returns_all_when_names_empty(names):
+    config = _named_config()
+    assert config.select(names) == config.templates
+
+
+def test_select_scopes_to_named_links():
+    config = _named_config()
+    assert [e.name for e in config.select(["b"])] == ["b"]
+    assert [e.name for e in config.select(["a", "c"])] == ["a", "c"]
+
+
+def test_select_preserves_config_order_and_dedupes():
+    config = _named_config()
+    # Given out of order and with a duplicate, output follows config order once each.
+    assert [e.name for e in config.select(["c", "a", "c"])] == ["a", "c"]
+
+
+def test_select_unknown_name_raises():
+    with pytest.raises(RuntimeError, match=r"No template link named 'nope'"):
+        _named_config().select(["a", "nope"])

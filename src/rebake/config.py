@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -115,6 +116,20 @@ class RebakeConfig:
         if not named:
             raise RuntimeError("No named links in this repo. Add `name:` to the entries you want to target by name.")
         raise RuntimeError(f"No template link named '{name}'. Named links: {', '.join(sorted(named))}.")
+
+    def select(self, names: Sequence[str] | None) -> list[TemplateEntry]:
+        """Return the links to operate on, scoped by ``names``.
+
+        Without ``names`` every link is returned. With ``names`` only the links
+        whose ``name`` matches are returned, always in config order (independent of
+        the order the names were given) and de-duplicated. Every requested name is
+        validated via ``find_by_name``, so an unknown name raises ``RuntimeError``
+        rather than silently selecting nothing.
+        """
+        if not names:
+            return list(self.templates)
+        wanted = {self.find_by_name(name).name for name in names}
+        return [entry for entry in self.templates if entry.name in wanted]
 
     @classmethod
     def load(cls, project_dir: Path = Path(".")) -> "RebakeConfig":
