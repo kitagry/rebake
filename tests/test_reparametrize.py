@@ -1,4 +1,5 @@
 import json
+from collections import OrderedDict
 from pathlib import Path
 from unittest.mock import patch
 
@@ -98,6 +99,24 @@ def test_reparametrize_saves_new_context(tmp_path):
     assert updated.context["cookiecutter"]["author"] == "Bob"
     # commit hash は変わらない
     assert updated.commit == "abc123"
+
+
+def test_reparametrize_saves_ordered_context_as_safe_yaml(tmp_path):
+    project_dir = make_project(tmp_path)
+    new_context = OrderedDict([("project_name", "my-project"), ("author", "Bob")])
+
+    with (
+        patch("rebake.reparametrize.is_working_tree_clean", return_value=True),
+        patch("rebake.reparametrize.prompt_all_variables", return_value=new_context),
+        patch("rebake.reparametrize.clone_at_commit"),
+        patch("rebake.reparametrize.render_template", return_value=Path("/tmp/rendered")),
+        patch("rebake.reparametrize.generate_diff", return_value=b""),
+    ):
+        run_reparametrize(project_dir)
+
+    rebake_yaml = (project_dir / "rebake.yaml").read_text()
+    assert "!!python/object" not in rebake_yaml
+    assert RebakeConfig.load(project_dir).templates[0].context["cookiecutter"] == dict(new_context)
 
 
 def test_reparametrize_skips_apply_when_no_diff(tmp_path):

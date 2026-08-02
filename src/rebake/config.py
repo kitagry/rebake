@@ -149,7 +149,7 @@ class RebakeConfig:
         # The read side still accepts the legacy top-level shape and .cruft.json,
         # so this stays one-way backward compatible while keeping one write path.
         out = {"templates": [entry.to_dict() for entry in self.templates]}
-        (project_dir / REBAKE_FILE).write_text(yaml.dump(out, allow_unicode=True, sort_keys=False))
+        (project_dir / REBAKE_FILE).write_text(yaml.safe_dump(out, allow_unicode=True, sort_keys=False))
 
         cruft_file = project_dir / CRUFT_FILE
         if cruft_file.exists():
