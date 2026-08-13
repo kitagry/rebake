@@ -2,9 +2,14 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
+from typer.testing import CliRunner
 
 from rebake.check import CheckResult, check_entries, is_up_to_date
+from rebake.cli import app
+
+runner = CliRunner()
 
 
 def make_cruft_file(tmp_path, commit: str) -> Path:
@@ -110,3 +115,43 @@ def test_check_entries_reports_each_template(tmp_path):
     assert checks[1].result == CheckResult.OUTDATED
     assert checks[1].entry.target_directory == "sub1"
     assert checks[1].head_commit == "ccc"
+
+
+def make_named_multi_project(tmp_path) -> Path:
+    data = {
+        "templates": [
+            {"template": "https://x/a", "commit": "aaa", "context": {}, "name": "a"},
+            {"template": "https://x/b", "commit": "bbb", "context": {}, "name": "b"},
+        ]
+    }
+    (tmp_path / "rebake.yaml").write_text(yaml.dump(data, allow_unicode=True))
+    return tmp_path
+
+
+def test_check_entries_scopes_to_named_link(tmp_path):
+    make_named_multi_project(tmp_path)
+
+    # Only the "b" link is resolved, so a single side-effect value is enough.
+    with patch("rebake.check.resolve_template_commit", return_value="bbb2") as mock_fn:
+        checks = check_entries(tmp_path, ["b"])
+
+    assert [c.entry.name for c in checks] == ["b"]
+    assert checks[0].result == CheckResult.OUTDATED
+    mock_fn.assert_called_once_with("https://x/b", checkout=None)
+
+
+def test_check_entries_unknown_name_raises(tmp_path):
+    make_named_multi_project(tmp_path)
+
+    with pytest.raises(RuntimeError, match="nope"):
+        check_entries(tmp_path, ["nope"])
+
+
+def test_cli_check_unknown_name_exits_error_not_outdated(tmp_path):
+    """An unknown --name exits 2 (error), not 1 (outdated): the CLI must catch the
+    RuntimeError from select() rather than let it escape as a traceback."""
+    make_named_multi_project(tmp_path)
+
+    result = runner.invoke(app, ["check", str(tmp_path), "-n", "nope"])
+
+    assert result.exit_code == 2

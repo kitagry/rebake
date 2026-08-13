@@ -40,20 +40,8 @@ def run_reparametrize(
 
     config = RebakeConfig.load(project_dir)
 
-    for entry in _select_entries(config, name):
+    for entry in config.select([name] if name is not None else None):
         _reparametrize_entry(entry, project_dir, config)
-
-
-def _select_entries(config: RebakeConfig, name: str | None) -> list[TemplateEntry]:
-    """Return the template links to reparametrize.
-
-    Without ``name`` every link is selected. With ``name`` only the link whose
-    ``name`` matches is selected; unnamed links cannot be targeted by name. This
-    mirrors ``update._apply_checkout_override``'s selection philosophy.
-    """
-    if name is None:
-        return config.templates
-    return [config.find_by_name(name)]
 
 
 def _reparametrize_entry(entry: TemplateEntry, project_dir: Path, config: RebakeConfig) -> None:

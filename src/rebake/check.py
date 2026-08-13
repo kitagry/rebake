@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -20,11 +21,15 @@ class EntryCheck:
     result: CheckResult
 
 
-def check_entries(project_dir: Path = Path(".")) -> list[EntryCheck]:
-    """Check every registered template link against its remote HEAD."""
+def check_entries(project_dir: Path = Path("."), names: Sequence[str] | None = None) -> list[EntryCheck]:
+    """Check the registered template links against their remote HEADs.
+
+    By default every link is checked. Pass ``names`` to scope the report to the
+    links with those ``name``s (see ``RebakeConfig.select``).
+    """
     config = RebakeConfig.load(project_dir)
     checks: list[EntryCheck] = []
-    for entry in config.templates:
+    for entry in config.select(names):
         head_commit = resolve_template_commit(entry.template, checkout=entry.checkout)
         result = CheckResult.UP_TO_DATE if entry.commit == head_commit else CheckResult.OUTDATED
         checks.append(EntryCheck(entry=entry, head_commit=head_commit, result=result))

@@ -45,8 +45,14 @@ tracks [multiple templates](#multiple-templates), every one is checked and the
 command reports each; it exits non-zero if any is outdated.
 
 ```bash
-rebake check [PROJECT_DIR]
+rebake check [PROJECT_DIR] [OPTIONS]
 ```
+
+#### Options
+
+| Option | Description |
+|---|---|
+| `--name`, `-n` | Check only the [multi-template](#multiple-templates) link(s) with this `name` (repeatable, e.g. `-n api -n batch`). Defaults to all links. |
 
 Exit codes:
 - `0` — up-to-date
@@ -83,6 +89,7 @@ rebake will:
 | `--allow-untracked-files` | Allow update even if untracked files exist (no other changes) |
 | `--quiet` | Disable interactive prompts; exit 1 if new variables are found without a supplied value |
 | `--checkout`, `-c` | Branch, tag or commit to follow. On a [multi-template](#multiple-templates) repo, use `<name>@<ref>` (e.g. `go@main`) to target the link named `go`; a bare `<ref>` is rejected as ambiguous |
+| `--name`, `-n` | Update only the [multi-template](#multiple-templates) link(s) with this `name` (repeatable, e.g. `-n api -n batch`). Defaults to all links. Orthogonal to `--checkout`, so they compose: `--name api --checkout api@main` |
 
 #### Hooks
 
@@ -151,8 +158,11 @@ A single repository can track more than one cookiecutter template — for exampl
 a shared CI/config template at the root plus one language scaffold per
 sub-directory. Each template link (an entry in the `templates:` list) records
 its own `commit` and a `target_directory` (the sub-path its patches apply to).
-`rebake check` and `rebake update` operate on every link; `update` applies each
-template's diff into its own `target_directory`.
+`rebake check` and `rebake update` operate on every link by default; `update`
+applies each template's diff into its own `target_directory`. Pass `--name`/`-n`
+(repeatable) to scope either command to specific links by their `name` — handy
+for opening a focused, single-subproject PR when several links have drifted at
+once. This mirrors `reparametrize --name`.
 
 Every link is self-contained: `context`, `checkout`, `skip` and `hooks` are all
 per-entry, so each template keeps its own variables and hooks.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 from rich.console import Console
@@ -26,8 +27,13 @@ def run_update(
     allow_untracked_files: bool = False,
     quiet: bool = False,
     checkout: str | None = None,
+    names: Sequence[str] | None = None,
 ) -> None:
-    """Apply the latest template changes to every registered template link.
+    """Apply the latest template changes to the registered template links.
+
+    By default every link is updated. Pass ``names`` to scope the run to the
+    links with those ``name``s (see ``RebakeConfig.select``); this is orthogonal
+    to ``checkout``, so the two compose.
 
     Raises RuntimeError when the working tree has uncommitted changes.
     Raises RuntimeError in quiet mode when new template variables are found.
@@ -40,15 +46,23 @@ def run_update(
 
     config = RebakeConfig.load(project_dir)
 
-    if checkout is not None:
-        _apply_checkout_override(config, checkout)
+    selected = config.select(names)
 
-    for entry in config.templates:
+    if checkout is not None:
+        overridden = _apply_checkout_override(config, checkout)
+        if overridden not in selected:
+            raise RuntimeError(
+                f"--checkout targets the link '{overridden.name}', which --name does not select. "
+                "Add it to --name, or drop --checkout."
+            )
+
+    for entry in selected:
         _update_entry(entry, project_dir, config, quiet=quiet)
 
 
-def _apply_checkout_override(config: RebakeConfig, checkout: str) -> None:
-    """Apply a CLI ``--checkout`` override to ``config`` in place.
+def _apply_checkout_override(config: RebakeConfig, checkout: str) -> TemplateEntry:
+    """Apply a CLI ``--checkout`` override to ``config`` in place, returning the
+    entry it modified.
 
     Single-template: the value is the ref for the sole link.
     Multi-template: the value must be ``<name>@<ref>`` and overrides only the
@@ -57,7 +71,7 @@ def _apply_checkout_override(config: RebakeConfig, checkout: str) -> None:
     """
     if len(config.templates) == 1:
         config.templates[0].checkout = checkout
-        return
+        return config.templates[0]
 
     name, sep, ref = checkout.partition("@")
     if not sep or not name or not ref:
@@ -65,7 +79,9 @@ def _apply_checkout_override(config: RebakeConfig, checkout: str) -> None:
             "--checkout is ambiguous for a multi-template repository. "
             "Use `<name>@<ref>` (e.g. go@main) to target one link, or set `checkout:` per entry in rebake.yaml."
         )
-    config.find_by_name(name).checkout = ref
+    entry = config.find_by_name(name)
+    entry.checkout = ref
+    return entry
 
 
 def _update_entry(

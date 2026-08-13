@@ -52,11 +52,17 @@ def add(
 @app.command()
 def check(
     project_dir: Path = typer.Argument(Path("."), help="Path to the project directory"),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Check only the template link(s) with this name (repeatable). Defaults to all links.",
+    ),
 ) -> None:
     """Check if every registered template link is up-to-date."""
     try:
-        checks = check_entries(project_dir)
-    except (FileNotFoundError, ValueError) as e:
+        checks = check_entries(project_dir, name)
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=2)
 
@@ -117,12 +123,24 @@ def update(
         "-c",
         help="Branch, tag or commit to follow. On a multi-template repo, use <name>@<ref> to target one link.",
     ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Update only the template link(s) with this name (repeatable). Defaults to all links.",
+    ),
 ) -> None:
     """Apply the latest template changes to the project."""
     from rebake.update import run_update
 
     try:
-        run_update(project_dir, allow_untracked_files=allow_untracked_files, quiet=quiet, checkout=checkout)
+        run_update(
+            project_dir,
+            allow_untracked_files=allow_untracked_files,
+            quiet=quiet,
+            checkout=checkout,
+            names=name,
+        )
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)
