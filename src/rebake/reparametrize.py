@@ -106,5 +106,5 @@ def _reparametrize_entry(entry: TemplateEntry, project_dir: Path, config: Rebake
     # Persist the new context. Save after each entry so a partial run (or a
     # mid-loop abort) still persists the entries already processed — mirrors
     # update._update_entry's per-entry save rationale.
-    entry.context["cookiecutter"] = new_context
+    entry.context["cookiecutter"] = dict(new_context)
     config.save(project_dir)
