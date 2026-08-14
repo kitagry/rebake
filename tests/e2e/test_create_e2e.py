@@ -87,13 +87,9 @@ def test_create_multi_renders_primary_and_additional_subdirs(tmp_path: Path) -> 
             "--output-dir",
             str(output_dir),
             "--add",
-            str(template_b),
-            "-t",
-            "batch",
+            f"{template_b}=batch",
             "--add",
-            str(template_c),
-            "-t",
-            "api",
+            f"{template_c}=api",
         ],
         input="proj-a\nproj-b\nproj-c\n",  # cookiecutter プロンプト: primary → b → c の順
     )
@@ -120,9 +116,10 @@ def test_create_multi_root_overlay_later_add_wins(tmp_path: Path) -> None:
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
+    # A bare --add (no =TARGET) renders the second template at the root too.
     result = runner.invoke(
         app,
-        ["create", str(primary), "--output-dir", str(output_dir), "--add", str(template_b), "-t", "."],
+        ["create", str(primary), "--output-dir", str(output_dir), "--add", str(template_b)],
         input="proj-a\nproj-b\n",
     )
 
@@ -138,17 +135,17 @@ def test_create_multi_root_overlay_later_add_wins(tmp_path: Path) -> None:
 
 
 @pytest.mark.e2e
-def test_create_rejects_mismatched_add_target_counts(tmp_path: Path) -> None:
+def test_create_rejects_invalid_add_spec(tmp_path: Path) -> None:
     primary = _template_at(tmp_path / "t_primary")
-    template_b = _template_at(tmp_path / "t_b")
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
+    # An --add spec with an empty target ("=") is rejected before rendering.
     result = runner.invoke(
         app,
-        ["create", str(primary), "--output-dir", str(output_dir), "--add", str(template_b)],  # -t 無し
+        ["create", str(primary), "--output-dir", str(output_dir), "--add", f"{primary}="],
     )
 
     assert result.exit_code == 1
-    # The count check fires before rendering, so nothing is written.
+    # The parse guard fires before rendering, so nothing is written.
     assert list(output_dir.iterdir()) == []

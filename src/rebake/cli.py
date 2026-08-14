@@ -17,33 +17,19 @@ def create(
     template: str = typer.Argument(..., help="Primary cookiecutter template (rendered at the repo root)"),
     output_dir: Path = typer.Option(Path("."), "--output-dir", "-o", help="Directory to create the project in"),
     checkout: str | None = typer.Option(None, "--checkout", help="Branch, tag or commit for the primary template"),
-    add: list[str] | None = typer.Option(
+    additional: list[str] | None = typer.Option(
         None,
         "--add",
         "-a",
-        help="Additional cookiecutter template to render into the new project (repeatable). "
-        "Pair each with a --target-directory in the same order.",
-    ),
-    target_directory: list[str] | None = typer.Option(
-        None,
-        "--target-directory",
-        "-t",
-        help="Sub-path for the matching --add (repeatable, paired by order; use '.' for the repo root).",
+        help="Additional template as TEMPLATE[=TARGET] (repeatable): render TEMPLATE into TARGET, "
+        "or at the repository root when =TARGET is omitted.",
     ),
 ) -> None:
     """Create a new project from one or more cookiecutter templates."""
     from rebake.create import run_create
 
-    adds, targets = add or [], target_directory or []
-    if len(adds) != len(targets):
-        err_console.print(
-            "[red]Error:[/red] --add and --target-directory must be repeated the same number of times; "
-            "they are paired in order."
-        )
-        raise typer.Exit(code=1)
-
     try:
-        project = run_create(template, output_dir=output_dir, checkout=checkout, additional=list(zip(adds, targets)))
+        project = run_create(template, output_dir=output_dir, checkout=checkout, additional=additional or [])
         console.print(f"[green]✓[/green] Project created at [bold]{project}[/bold]")
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")

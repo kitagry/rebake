@@ -78,23 +78,43 @@ def _reject_unsafe_target(target_directory: str) -> None:
         raise ValueError(f"target_directory {target_directory!r} must be a relative path inside the project.")
 
 
+def _parse_add_spec(spec: str) -> tuple[str, str]:
+    """Parse an ``--add`` spec into ``(template, target_directory)``.
+
+    The grammar is ``TEMPLATE[=TARGET]``: a bare spec renders the template at the
+    repository root (``"."``), while ``TEMPLATE=TARGET`` renders it under
+    ``TARGET``. The template comes first and the split is on the *last* ``=``
+    (``rpartition``), so the only ambiguous case is a bare spec whose template URL
+    itself contains ``=`` — give such a template an explicit ``=TARGET``.
+    """
+    template, sep, target = spec.rpartition("=")
+    if not sep:
+        if not spec:
+            raise ValueError("Invalid --add spec: expected TEMPLATE[=TARGET], got an empty value.")
+        return spec, "."
+    if not template or not target:
+        raise ValueError(f"Invalid --add spec {spec!r}: expected TEMPLATE=TARGET (or a bare TEMPLATE for the root).")
+    return template, target
+
+
 def run_create(
     template: str,
     output_dir: Path = Path("."),
     checkout: str | None = None,
-    additional: Sequence[tuple[str, str]] | None = None,
+    additional: Sequence[str] | None = None,
 ) -> Path:
-    """Create a new project from a cookiecutter template and write rebake.yaml.
+    """Create a new project from one or more cookiecutter templates and write rebake.yaml.
 
-    ``additional`` registers extra template links, each a ``(template,
-    target_directory)`` pair rendered into the new project after the primary one
-    via ``run_add`` (cookiecutter's wrapper is stripped and the entry is appended
-    to rebake.yaml). Passing them here is equivalent to a ``create`` followed by
-    one ``add`` per pair. Links may share a ``target_directory`` (typically
-    ``"."``); on a path collision the later link wins on disk, mirroring
-    ``update``'s later-entry-wins ordering.
+    ``additional`` registers extra template links, each an ``--add`` spec
+    (``TEMPLATE[=TARGET]``, see ``_parse_add_spec``) rendered into the new project
+    after the primary one via ``run_add`` — cookiecutter's wrapper is stripped and
+    the entry is appended to rebake.yaml. Passing them here is equivalent to a
+    ``create`` followed by one ``add`` per spec. Links may share a target
+    (typically the root ``"."``); on a path collision the later link wins on disk,
+    mirroring ``update``'s later-entry-wins ordering.
     """
-    for _, target_directory in additional or []:
+    links = [_parse_add_spec(spec) for spec in additional or []]
+    for _, target_directory in links:
         _reject_unsafe_target(target_directory)
 
     output_dir = output_dir.resolve()
@@ -111,7 +131,7 @@ def run_create(
     )
     RebakeConfig(templates=[entry]).save(rendered_project)
 
-    for add_template, target_directory in additional or []:
+    for add_template, target_directory in links:
         run_add(add_template, project_dir=rendered_project, target_directory=target_directory)
 
     return rendered_project

@@ -42,9 +42,8 @@ uv add rebake
 
 Bootstrap a new project from one or more cookiecutter templates and write its
 `rebake.yaml`. The primary template is rendered at the repository root; each
-`--add` template is rendered into the sub-path given by the matching
-`--target-directory` (paired in order) — equivalent to a `create` followed by
-one [`rebake add`](#rebake-add) per pair.
+`--add` template is rendered into its own sub-path — equivalent to a `create`
+followed by one [`rebake add`](#rebake-add) per template.
 
 ```bash
 rebake create <TEMPLATE> [OPTIONS]
@@ -56,25 +55,25 @@ rebake create <TEMPLATE> [OPTIONS]
 |---|---|
 | `--output-dir`, `-o` | Directory to create the project in (default: `.`). |
 | `--checkout` | Branch, tag or commit for the **primary** template. |
-| `--add`, `-a` | Additional cookiecutter template to render into the project (repeatable). Pair each with a `--target-directory` in the same order. |
-| `--target-directory`, `-t` | Sub-path for the matching `--add` (repeatable; use `.` for the repository root). |
+| `--add`, `-a` | Additional template as `TEMPLATE[=TARGET]` (repeatable): render `TEMPLATE` into `TARGET`, or at the repository root when `=TARGET` is omitted. |
 
-`--add` and `--target-directory` must be given the same number of times — they
-are paired by order — otherwise rebake exits with an error.
+The template comes first and the split is on the last `=`, so a template URL
+that itself contains `=` still parses; give such a template an explicit
+`=TARGET` if you want it at the root.
 
 Example — a Go scaffold at the root, a shared common template *also* at the root,
 and a DB-migration scaffold under `migrate/`:
 
 ```bash
 rebake create https://github.com/org/cookiecutter-go \
-  --add https://github.com/org/cookiecutter-common    -t . \
-  --add https://github.com/org/cookiecutter-migration -t migrate
+  --add https://github.com/org/cookiecutter-common \
+  --add https://github.com/org/cookiecutter-migration=migrate
 ```
 
-When more than one link targets the same directory (typically `.`), colliding
-files are written in `--add` order and the **last** link wins on disk. This
-mirrors how [`rebake update`](#rebake-update) applies overlapping links, so list
-the template you want to win last.
+When more than one link targets the same directory (typically the root),
+colliding files are written in `--add` order and the **last** link wins on disk.
+This mirrors how [`rebake update`](#rebake-update) applies overlapping links, so
+list the template you want to win last.
 
 Additional links are registered with their `template` and `target_directory`
 only; to pin a `checkout` or set a `name` per link, edit `rebake.yaml` after

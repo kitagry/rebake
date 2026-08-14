@@ -5,7 +5,29 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from rebake.create import run_create
+from rebake.create import _parse_add_spec, run_create
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("https://github.com/o/t", ("https://github.com/o/t", ".")),  # bare → root
+        ("https://github.com/o/t=api", ("https://github.com/o/t", "api")),
+        ("./local/template=batch", ("./local/template", "batch")),
+        # A nested target is fine; run_add creates intermediate directories.
+        ("https://github.com/o/t=deep/nested/dir", ("https://github.com/o/t", "deep/nested/dir")),
+        # rpartition splits on the LAST '='; a template URL containing '=' still parses.
+        ("https://host/t?ref=v1=api", ("https://host/t?ref=v1", "api")),
+    ],
+)
+def test_parse_add_spec(spec, expected):
+    assert _parse_add_spec(spec) == expected
+
+
+@pytest.mark.parametrize("bad_spec", ["", "=api", "template="])
+def test_parse_add_spec_rejects_empty_side(bad_spec):
+    with pytest.raises(ValueError):
+        _parse_add_spec(bad_spec)
 
 
 def test_create_renders_template_and_writes_rebake_yaml(tmp_path):
@@ -120,8 +142,8 @@ def test_create_with_additional_appends_entries_in_order(tmp_path):
             "https://github.com/owner/primary",
             output_dir=output_dir,
             additional=[
-                ("https://github.com/owner/b", "batch"),
-                ("https://github.com/owner/c", "api"),
+                "https://github.com/owner/b=batch",
+                "https://github.com/owner/c=api",
             ],
         )
 
@@ -143,6 +165,43 @@ def test_create_with_additional_appends_entries_in_order(tmp_path):
     assert templates[2]["target_directory"] == "api"
 
 
+def test_create_bare_add_spec_renders_at_root(tmp_path):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    rendered_project = output_dir / "my-project"
+    rendered_project.mkdir()
+
+    render_b = tmp_path / "render_b"
+    render_b.mkdir()
+    (render_b / "b.txt").write_text("b\n")
+
+    with (
+        patch("rebake.create.resolve_template_commit", side_effect=["aaa", "bbb"]),
+        patch(
+            "rebake.create.cookiecutter_interactive",
+            side_effect=[
+                (str(rendered_project), {"project_name": "my-project"}),
+                (str(render_b), {"project_name": "proj-b"}),
+            ],
+        ),
+    ):
+        run_create(
+            "https://github.com/owner/primary",
+            output_dir=output_dir,
+            additional=["https://github.com/owner/b"],  # no =TARGET → repo root
+        )
+
+    # A bare spec renders at the root, so its files land directly in the project.
+    assert (rendered_project / "b.txt").read_text() == "b\n"
+    templates = yaml.safe_load((rendered_project / "rebake.yaml").read_text())["templates"]
+    assert [t["template"] for t in templates] == [
+        "https://github.com/owner/primary",
+        "https://github.com/owner/b",
+    ]
+    # Root target is the default, so "." is omitted from both entries.
+    assert all("target_directory" not in t for t in templates)
+
+
 @pytest.mark.parametrize("bad_target", ["../escape", "/abs/path", "a/../../b"])
 def test_create_rejects_unsafe_target(tmp_path, bad_target):
     output_dir = tmp_path / "output"
@@ -156,7 +215,7 @@ def test_create_rejects_unsafe_target(tmp_path, bad_target):
         run_create(
             "https://github.com/owner/primary",
             output_dir=output_dir,
-            additional=[("https://github.com/owner/b", bad_target)],
+            additional=[f"https://github.com/owner/b={bad_target}"],
         )
 
     # The guard fires before anything is rendered.
