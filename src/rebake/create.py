@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -60,12 +61,42 @@ def cookiecutter_interactive(
     return result, public_context
 
 
+def _reject_unsafe_target(target_directory: str) -> None:
+    """Reject an absolute or parent-escaping target before rendering starts.
+
+    This is a purely syntactic pre-check (any ``..`` component or an absolute
+    path), so it is deliberately stricter than ``run_add``'s post-resolve
+    ``is_relative_to`` guard: an in-repo path like ``a/../b`` is accepted by
+    ``run_add`` but rejected here. Running before the primary template is rendered
+    lets ``run_create`` reject an unsafe target without leaving a half-built
+    project on disk. It does not guard against a later render *failing* midway —
+    that leaves the already-rendered links in place, just as a bare ``rebake add``
+    would.
+    """
+    path = Path(target_directory)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"target_directory {target_directory!r} must be a relative path inside the project.")
+
+
 def run_create(
     template: str,
     output_dir: Path = Path("."),
     checkout: str | None = None,
+    additional: Sequence[tuple[str, str]] | None = None,
 ) -> Path:
-    """Create a new project from a cookiecutter template and write rebake.yaml."""
+    """Create a new project from a cookiecutter template and write rebake.yaml.
+
+    ``additional`` registers extra template links, each a ``(template,
+    target_directory)`` pair rendered into the new project after the primary one
+    via ``run_add`` (cookiecutter's wrapper is stripped and the entry is appended
+    to rebake.yaml). Passing them here is equivalent to a ``create`` followed by
+    one ``add`` per pair. Links may share a ``target_directory`` (typically
+    ``"."``); on a path collision the later link wins on disk, mirroring
+    ``update``'s later-entry-wins ordering.
+    """
+    for _, target_directory in additional or []:
+        _reject_unsafe_target(target_directory)
+
     output_dir = output_dir.resolve()
 
     commit = resolve_template_commit(template, checkout=checkout)
@@ -79,6 +110,9 @@ def run_create(
         checkout=checkout,
     )
     RebakeConfig(templates=[entry]).save(rendered_project)
+
+    for add_template, target_directory in additional or []:
+        run_add(add_template, project_dir=rendered_project, target_directory=target_directory)
 
     return rendered_project
 

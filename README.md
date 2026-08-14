@@ -38,6 +38,48 @@ uv add rebake
 
 ## Usage
 
+### `rebake create`
+
+Bootstrap a new project from one or more cookiecutter templates and write its
+`rebake.yaml`. The primary template is rendered at the repository root; each
+`--add` template is rendered into the sub-path given by the matching
+`--target-directory` (paired in order) — equivalent to a `create` followed by
+one [`rebake add`](#rebake-add) per pair.
+
+```bash
+rebake create <TEMPLATE> [OPTIONS]
+```
+
+#### Options
+
+| Option | Description |
+|---|---|
+| `--output-dir`, `-o` | Directory to create the project in (default: `.`). |
+| `--checkout` | Branch, tag or commit for the **primary** template. |
+| `--add`, `-a` | Additional cookiecutter template to render into the project (repeatable). Pair each with a `--target-directory` in the same order. |
+| `--target-directory`, `-t` | Sub-path for the matching `--add` (repeatable; use `.` for the repository root). |
+
+`--add` and `--target-directory` must be given the same number of times — they
+are paired by order — otherwise rebake exits with an error.
+
+Example — a Go scaffold at the root, a shared common template *also* at the root,
+and a DB-migration scaffold under `migrate/`:
+
+```bash
+rebake create https://github.com/org/cookiecutter-go \
+  --add https://github.com/org/cookiecutter-common    -t . \
+  --add https://github.com/org/cookiecutter-migration -t migrate
+```
+
+When more than one link targets the same directory (typically `.`), colliding
+files are written in `--add` order and the **last** link wins on disk. This
+mirrors how [`rebake update`](#rebake-update) applies overlapping links, so list
+the template you want to win last.
+
+Additional links are registered with their `template` and `target_directory`
+only; to pin a `checkout` or set a `name` per link, edit `rebake.yaml` after
+creating (see [Multiple templates](#multiple-templates)).
+
 ### `rebake check`
 
 Check whether the project is up-to-date with its template(s). When a repository
@@ -167,7 +209,8 @@ once. This mirrors `reparametrize --name`.
 Every link is self-contained: `context`, `checkout`, `skip` and `hooks` are all
 per-entry, so each template keeps its own variables and hooks.
 
-Add a link with [`rebake add`](#rebake-add), or by hand-editing the
+Bootstrap several links at once with [`rebake create`](#rebake-create), add one
+to an existing repository with [`rebake add`](#rebake-add), or hand-edit the
 `templates:` list in `rebake.yaml`.
 
 ## Migrating from cruft
