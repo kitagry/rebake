@@ -55,6 +55,10 @@ their Cookiecutter wrapper stripped before their contents are copied into the
 new repository. A bare later template targets the repository root; append
 `=TARGET` to place it in a sub-directory.
 
+Only later template arguments accept an `=TARGET` suffix. The first template
+always creates the repository root; an `=TARGET` suffix on the first argument is
+not supported.
+
 #### Options
 
 | Option | Description |
