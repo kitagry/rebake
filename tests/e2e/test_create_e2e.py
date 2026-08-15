@@ -72,8 +72,8 @@ def test_create_with_checkout(tmp_path: Path) -> None:
 
 
 @pytest.mark.e2e
-def test_create_multi_renders_primary_and_additional_subdirs(tmp_path: Path) -> None:
-    primary = _template_at(tmp_path / "t_primary")
+def test_create_multi_renders_first_and_later_templates_in_order(tmp_path: Path) -> None:
+    first = _template_at(tmp_path / "t_first")
     template_b = _template_at(tmp_path / "t_b")
     template_c = _template_at(tmp_path / "t_c")
     output_dir = tmp_path / "output"
@@ -83,15 +83,13 @@ def test_create_multi_renders_primary_and_additional_subdirs(tmp_path: Path) -> 
         app,
         [
             "create",
-            str(primary),
+            str(first),
             "--output-dir",
             str(output_dir),
-            "--add",
             f"{template_b}=batch",
-            "--add",
             f"{template_c}=api",
         ],
-        input="proj-a\nproj-b\nproj-c\n",  # cookiecutter プロンプト: primary → b → c の順
+        input="proj-a\nproj-b\nproj-c\n",  # cookiecutter prompts follow argument order
     )
 
     assert result.exit_code == 0, result.output
@@ -103,47 +101,47 @@ def test_create_multi_renders_primary_and_additional_subdirs(tmp_path: Path) -> 
     assert not (project / "batch" / "proj-b").exists()
 
     templates = yaml.safe_load((project / "rebake.yaml").read_text())["templates"]
-    assert [t["template"] for t in templates] == [str(primary), str(template_b), str(template_c)]
+    assert [t["template"] for t in templates] == [str(first), str(template_b), str(template_c)]
     assert "target_directory" not in templates[0]
     assert templates[1]["target_directory"] == "batch"
     assert templates[2]["target_directory"] == "api"
 
 
 @pytest.mark.e2e
-def test_create_multi_root_overlay_later_add_wins(tmp_path: Path) -> None:
-    primary = _template_at(tmp_path / "t_primary")
+def test_create_multi_root_overlay_later_copy_wins_during_create(tmp_path: Path) -> None:
+    first = _template_at(tmp_path / "t_first")
     template_b = _template_at(tmp_path / "t_b")
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    # A bare --add (no =TARGET) renders the second template at the root too.
+    # A bare later spec (no =TARGET) renders the second template at the root too.
     result = runner.invoke(
         app,
-        ["create", str(primary), "--output-dir", str(output_dir), "--add", str(template_b)],
+        ["create", str(first), "--output-dir", str(output_dir), str(template_b)],
         input="proj-a\nproj-b\n",
     )
 
     assert result.exit_code == 0, result.output
-    project = output_dir / "proj-a"  # primary establishes the project directory name
-    # Both templates render at the root; on collision the later --add wins on disk.
+    project = output_dir / "proj-a"  # the first template establishes the project directory name
+    # Both templates render at the root; on collision the later copy wins during create.
     assert (project / "README.md").read_text().strip() == "# proj-b"
 
     templates = yaml.safe_load((project / "rebake.yaml").read_text())["templates"]
-    assert [t["template"] for t in templates] == [str(primary), str(template_b)]
+    assert [t["template"] for t in templates] == [str(first), str(template_b)]
     # Both target the repo root, so "." is omitted from every saved entry.
     assert all("target_directory" not in t for t in templates)
 
 
 @pytest.mark.e2e
-def test_create_rejects_invalid_add_spec(tmp_path: Path) -> None:
-    primary = _template_at(tmp_path / "t_primary")
+def test_create_rejects_invalid_later_template_spec(tmp_path: Path) -> None:
+    first = _template_at(tmp_path / "t_first")
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    # An --add spec with an empty target ("=") is rejected before rendering.
+    # A later spec with an empty target ("=") is rejected before rendering.
     result = runner.invoke(
         app,
-        ["create", str(primary), "--output-dir", str(output_dir), "--add", f"{primary}="],
+        ["create", str(first), "--output-dir", str(output_dir), f"{first}="],
     )
 
     assert result.exit_code == 1

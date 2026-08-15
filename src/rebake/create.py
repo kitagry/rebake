@@ -67,7 +67,7 @@ def _reject_unsafe_target(target_directory: str) -> None:
     This is a purely syntactic pre-check (any ``..`` component or an absolute
     path), so it is deliberately stricter than ``run_add``'s post-resolve
     ``is_relative_to`` guard: an in-repo path like ``a/../b`` is accepted by
-    ``run_add`` but rejected here. Running before the primary template is rendered
+    ``run_add`` but rejected here. Running before the first template is rendered
     lets ``run_create`` reject an unsafe target without leaving a half-built
     project on disk. It does not guard against a later render *failing* midway —
     that leaves the already-rendered links in place, just as a bare ``rebake add``
@@ -78,8 +78,8 @@ def _reject_unsafe_target(target_directory: str) -> None:
         raise ValueError(f"target_directory {target_directory!r} must be a relative path inside the project.")
 
 
-def _parse_add_spec(spec: str) -> tuple[str, str]:
-    """Parse an ``--add`` spec into ``(template, target_directory)``.
+def _parse_template_spec(spec: str) -> tuple[str, str]:
+    """Parse a subsequent template spec into ``(template, target_directory)``.
 
     The grammar is ``TEMPLATE[=TARGET]``: a bare spec renders the template at the
     repository root (``"."``), while ``TEMPLATE=TARGET`` renders it under
@@ -90,30 +90,33 @@ def _parse_add_spec(spec: str) -> tuple[str, str]:
     template, sep, target = spec.rpartition("=")
     if not sep:
         if not spec:
-            raise ValueError("Invalid --add spec: expected TEMPLATE[=TARGET], got an empty value.")
+            raise ValueError("Invalid template spec: expected TEMPLATE[=TARGET], got an empty value.")
         return spec, "."
     if not template or not target:
-        raise ValueError(f"Invalid --add spec {spec!r}: expected TEMPLATE=TARGET (or a bare TEMPLATE for the root).")
+        raise ValueError(f"Invalid template spec {spec!r}: expected TEMPLATE=TARGET (or a bare TEMPLATE for the root).")
     return template, target
 
 
 def run_create(
-    template: str,
+    templates: Sequence[str],
     output_dir: Path = Path("."),
     checkout: str | None = None,
-    additional: Sequence[str] | None = None,
 ) -> Path:
     """Create a new project from one or more cookiecutter templates and write rebake.yaml.
 
-    ``additional`` registers extra template links, each an ``--add`` spec
-    (``TEMPLATE[=TARGET]``, see ``_parse_add_spec``) rendered into the new project
-    after the primary one via ``run_add`` — cookiecutter's wrapper is stripped and
-    the entry is appended to rebake.yaml. Passing them here is equivalent to a
-    ``create`` followed by one ``add`` per spec. Links may share a target
-    (typically the root ``"."``); on a path collision the later link wins on disk,
-    mirroring ``update``'s later-entry-wins ordering.
+    The first value is the template that creates the project directory. Remaining
+    values are ``TEMPLATE[=TARGET]`` specs (see ``_parse_template_spec``) rendered
+    into that project via ``run_add`` — cookiecutter's wrapper is stripped and each
+    entry is appended to rebake.yaml. A bare subsequent spec targets the project
+    root. When templates create the same file during this command, the later copy
+    wins; overlapping links have no guaranteed precedence during future updates.
     """
-    links = [_parse_add_spec(spec) for spec in additional or []]
+    template_specs = list(templates)
+    if not template_specs:
+        raise ValueError("At least one template is required.")
+
+    template = template_specs[0]
+    links = [_parse_template_spec(spec) for spec in template_specs[1:]]
     for _, target_directory in links:
         _reject_unsafe_target(target_directory)
 

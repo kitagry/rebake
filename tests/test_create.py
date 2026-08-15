@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from rebake.create import _parse_add_spec, run_create
+from rebake.create import _parse_template_spec, run_create
 
 
 @pytest.mark.parametrize(
@@ -20,14 +20,14 @@ from rebake.create import _parse_add_spec, run_create
         ("https://host/t?ref=v1=api", ("https://host/t?ref=v1", "api")),
     ],
 )
-def test_parse_add_spec(spec, expected):
-    assert _parse_add_spec(spec) == expected
+def test_parse_template_spec(spec, expected):
+    assert _parse_template_spec(spec) == expected
 
 
 @pytest.mark.parametrize("bad_spec", ["", "=api", "template="])
-def test_parse_add_spec_rejects_empty_side(bad_spec):
+def test_parse_template_spec_rejects_empty_side(bad_spec):
     with pytest.raises(ValueError):
-        _parse_add_spec(bad_spec)
+        _parse_template_spec(bad_spec)
 
 
 def test_create_renders_template_and_writes_rebake_yaml(tmp_path):
@@ -43,7 +43,7 @@ def test_create_renders_template_and_writes_rebake_yaml(tmp_path):
             return_value=(str(rendered_project), {"project_name": "my-project"}),
         ) as mock_cc,
     ):
-        run_create("https://github.com/owner/template", output_dir=output_dir)
+        run_create(["https://github.com/owner/template"], output_dir=output_dir)
 
     mock_cc.assert_called_once()
     rebake_yaml = rendered_project / "rebake.yaml"
@@ -67,11 +67,40 @@ def test_create_uses_checkout(tmp_path):
             return_value=(str(rendered_project), {"project_name": "my-project"}),
         ),
     ):
-        run_create("https://github.com/owner/template", output_dir=output_dir, checkout="v1.0")
+        run_create(["https://github.com/owner/template"], output_dir=output_dir, checkout="v1.0")
 
     mock_commit.assert_called_once_with("https://github.com/owner/template", checkout="v1.0")
     entry = yaml.safe_load((rendered_project / "rebake.yaml").read_text())["templates"][0]
     assert entry["checkout"] == "v1.0"
+
+
+def test_create_checkout_applies_only_to_first_template(tmp_path):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    rendered_project = output_dir / "my-project"
+    rendered_project.mkdir()
+
+    with (
+        patch("rebake.create.resolve_template_commit", return_value="def456") as mock_commit,
+        patch(
+            "rebake.create.cookiecutter_interactive",
+            return_value=(str(rendered_project), {"project_name": "my-project"}),
+        ) as mock_cc,
+        patch("rebake.create.run_add") as mock_add,
+    ):
+        run_create(
+            ["https://github.com/owner/first", "https://github.com/owner/later=batch"],
+            output_dir=output_dir,
+            checkout="v1.0",
+        )
+
+    mock_commit.assert_called_once_with("https://github.com/owner/first", checkout="v1.0")
+    mock_cc.assert_called_once_with("https://github.com/owner/first", output_dir.resolve(), checkout="v1.0")
+    mock_add.assert_called_once_with(
+        "https://github.com/owner/later",
+        project_dir=rendered_project,
+        target_directory="batch",
+    )
 
 
 def test_create_saves_context_from_cookiecutter(tmp_path):
@@ -87,7 +116,7 @@ def test_create_saves_context_from_cookiecutter(tmp_path):
             return_value=(str(rendered_project), {"project_name": "my-project", "author": "me"}),
         ),
     ):
-        run_create("https://github.com/owner/template", output_dir=output_dir)
+        run_create(["https://github.com/owner/template"], output_dir=output_dir)
 
     entry = yaml.safe_load((rendered_project / "rebake.yaml").read_text())["templates"][0]
     assert entry["context"]["cookiecutter"]["project_name"] == "my-project"
@@ -107,13 +136,13 @@ def test_create_without_checkout_omits_field(tmp_path):
             return_value=(str(rendered_project), {"project_name": "my-project"}),
         ),
     ):
-        run_create("https://github.com/owner/template", output_dir=output_dir)
+        run_create(["https://github.com/owner/template"], output_dir=output_dir)
 
     entry = yaml.safe_load((rendered_project / "rebake.yaml").read_text())["templates"][0]
     assert "checkout" not in entry
 
 
-def test_create_with_additional_appends_entries_in_order(tmp_path):
+def test_create_with_multiple_templates_appends_entries_in_order(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     rendered_project = output_dir / "my-project"
@@ -139,12 +168,12 @@ def test_create_with_additional_appends_entries_in_order(tmp_path):
         ),
     ):
         project = run_create(
-            "https://github.com/owner/primary",
-            output_dir=output_dir,
-            additional=[
+            [
+                "https://github.com/owner/first",
                 "https://github.com/owner/b=batch",
                 "https://github.com/owner/c=api",
             ],
+            output_dir=output_dir,
         )
 
     assert project == rendered_project
@@ -154,18 +183,18 @@ def test_create_with_additional_appends_entries_in_order(tmp_path):
 
     templates = yaml.safe_load((rendered_project / "rebake.yaml").read_text())["templates"]
     assert [t["template"] for t in templates] == [
-        "https://github.com/owner/primary",
+        "https://github.com/owner/first",
         "https://github.com/owner/b",
         "https://github.com/owner/c",
     ]
     assert [t["commit"] for t in templates] == ["aaa", "bbb", "ccc"]
-    # primary omits target_directory ("."); additional links record theirs.
+    # The first link omits target_directory ("."); later links record theirs.
     assert "target_directory" not in templates[0]
     assert templates[1]["target_directory"] == "batch"
     assert templates[2]["target_directory"] == "api"
 
 
-def test_create_bare_add_spec_renders_at_root(tmp_path):
+def test_create_bare_later_spec_renders_at_root(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     rendered_project = output_dir / "my-project"
@@ -186,16 +215,18 @@ def test_create_bare_add_spec_renders_at_root(tmp_path):
         ),
     ):
         run_create(
-            "https://github.com/owner/primary",
+            [
+                "https://github.com/owner/first",
+                "https://github.com/owner/b",  # no =TARGET → repo root
+            ],
             output_dir=output_dir,
-            additional=["https://github.com/owner/b"],  # no =TARGET → repo root
         )
 
     # A bare spec renders at the root, so its files land directly in the project.
     assert (rendered_project / "b.txt").read_text() == "b\n"
     templates = yaml.safe_load((rendered_project / "rebake.yaml").read_text())["templates"]
     assert [t["template"] for t in templates] == [
-        "https://github.com/owner/primary",
+        "https://github.com/owner/first",
         "https://github.com/owner/b",
     ]
     # Root target is the default, so "." is omitted from both entries.
@@ -213,12 +244,41 @@ def test_create_rejects_unsafe_target(tmp_path, bad_target):
         pytest.raises(ValueError),
     ):
         run_create(
-            "https://github.com/owner/primary",
+            ["https://github.com/owner/first", f"https://github.com/owner/b={bad_target}"],
             output_dir=output_dir,
-            additional=[f"https://github.com/owner/b={bad_target}"],
         )
 
     # The guard fires before anything is rendered.
     mock_commit.assert_not_called()
     mock_cc.assert_not_called()
     assert list(output_dir.iterdir()) == []
+
+
+def test_create_rejects_empty_template_sequence(tmp_path):
+    with (
+        patch("rebake.create.resolve_template_commit") as mock_commit,
+        pytest.raises(ValueError, match="At least one template"),
+    ):
+        run_create([], output_dir=tmp_path)
+
+    mock_commit.assert_not_called()
+
+
+def test_create_does_not_parse_equals_in_first_template(tmp_path):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    rendered_project = output_dir / "my-project"
+    rendered_project.mkdir()
+    template = "https://host/template?ref=feature=value"
+
+    with (
+        patch("rebake.create.resolve_template_commit", return_value="abc123") as mock_commit,
+        patch(
+            "rebake.create.cookiecutter_interactive",
+            return_value=(str(rendered_project), {"project_name": "my-project"}),
+        ) as mock_cc,
+    ):
+        run_create([template], output_dir=output_dir)
+
+    mock_commit.assert_called_once_with(template, checkout=None)
+    mock_cc.assert_called_once_with(template, output_dir.resolve(), checkout=None)
