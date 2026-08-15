@@ -1,0 +1,5 @@
+hooks:
+  pre-update:
+    - 'echo "template pre" > "$REBAKE_PROJECT_DIR/template_pre.log"'
+  post-update:
+    - 'echo "template post: $REBAKE_NEW_COMMIT" > "$REBAKE_PROJECT_DIR/template_post.log"'
