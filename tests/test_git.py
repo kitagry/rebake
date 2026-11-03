@@ -340,7 +340,23 @@ def test_get_renamed_paths_skips_ambiguous_chain_after_origin_recreated(tmp_path
     subprocess.run(["git", "mv", "b.txt", "d.txt"], cwd=tmp_path, check=True, capture_output=True)
     _commit_all(tmp_path, "b -> d")
 
-    assert "a.txt" not in get_renamed_paths(tmp_path)
+    assert get_renamed_paths(tmp_path) == {}
+
+
+def test_get_renamed_paths_ignores_chain_whose_destination_was_deleted(tmp_path: Path) -> None:
+    """Only chains that still end at an existing file count as candidate destinations."""
+    _init_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("first file\n" * 5)
+    _commit_all(tmp_path, "initial")
+    subprocess.run(["git", "mv", "a.txt", "b.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "a -> b")
+    (tmp_path / "b.txt").unlink()
+    (tmp_path / "a.txt").write_text("second file\n" * 5)
+    _commit_all(tmp_path, "delete b, recreate a")
+    subprocess.run(["git", "mv", "a.txt", "c.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "a -> c")
+
+    assert get_renamed_paths(tmp_path) == {"a.txt": "c.txt"}
 
 
 def test_redirect_patch_paths_rewrites_deleted_file_entry() -> None:
@@ -429,6 +445,9 @@ def test_apply_patch_keeps_other_files_when_template_renames_moved_file(tmp_path
     (old_dir / "other.txt").write_text("old\n")
     (new_dir / "other.txt").write_text("new\n")
 
-    apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+    success, _ = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
 
+    # Template renames of moved files are not followed; they are reported as conflicts
+    assert not success
     assert (tmp_path / "other.txt").read_text() == "new\n"
+    assert (tmp_path / "docs" / "x.txt").read_text() == "".join(f"line{i}\n" for i in range(10))
