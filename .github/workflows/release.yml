@@ -15,21 +15,21 @@ jobs:
       url: https://pypi.org/p/rebake
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         fetch-depth: 0
     - name: Set up the latest version of uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
         enable-cache: true
     - name: Build
       run: uv build
 
     - name: upload dists
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: release-dists
         path: dist/
 
     - name: Publish package distributions to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+      uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
