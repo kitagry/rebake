@@ -6,13 +6,10 @@ on:
       - '*'
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-    environment:
-      name: pypi
-      url: https://pypi.org/p/rebake
+      contents: read
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -25,8 +22,24 @@ jobs:
     - name: Build
       run: uv build
 
-    - name: upload dists
+    - name: Upload dists
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: release-dists
+        path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/rebake
+
+    steps:
+    - name: Download dists
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: release-dists
         path: dist/
