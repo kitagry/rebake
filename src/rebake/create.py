@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -8,8 +11,8 @@ from cookiecutter.generate import generate_context, generate_files
 from cookiecutter.prompt import prompt_for_config
 from cookiecutter.repository import determine_repo_dir
 
-from rebake.config import CruftConfig
-from rebake.utils.git import get_template_head_commit
+from rebake.config import RebakeConfig, TemplateEntry
+from rebake.utils.git import resolve_template_commit
 
 
 def cookiecutter_interactive(
@@ -20,7 +23,7 @@ def cookiecutter_interactive(
     """Run cookiecutter interactively.
 
     Returns (rendered_project_path, cookiecutter_context) so callers can
-    persist the answered values in .cruft.json without a second prompt.
+    persist the answered values in rebake.yaml without a second prompt.
     """
     config_dict = get_user_config()
     repo_dir, cleanup = determine_repo_dir(
@@ -58,24 +61,131 @@ def cookiecutter_interactive(
     return result, public_context
 
 
+def _reject_unsafe_target(target_directory: str) -> None:
+    """Reject an absolute or parent-escaping target before rendering starts.
+
+    This is a purely syntactic pre-check (any ``..`` component or an absolute
+    path), so it is deliberately stricter than ``run_add``'s post-resolve
+    ``is_relative_to`` guard: an in-repo path like ``a/../b`` is accepted by
+    ``run_add`` but rejected here. Running before the first template is rendered
+    lets ``run_create`` reject an unsafe target without leaving a half-built
+    project on disk. It does not guard against a later render *failing* midway —
+    that leaves the already-rendered links in place, just as a bare ``rebake add``
+    would.
+    """
+    path = Path(target_directory)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"target_directory {target_directory!r} must be a relative path inside the project.")
+
+
+def _parse_template_spec(spec: str) -> tuple[str, str]:
+    """Parse a subsequent template spec into ``(template, target_directory)``.
+
+    The grammar is ``TEMPLATE[=TARGET]``: a bare spec renders the template at the
+    repository root (``"."``), while ``TEMPLATE=TARGET`` renders it under
+    ``TARGET``. The template comes first and the split is on the *last* ``=``
+    (``rpartition``), so the only ambiguous case is a bare spec whose template URL
+    itself contains ``=`` — give such a template an explicit ``=TARGET``.
+    """
+    template, sep, target = spec.rpartition("=")
+    if not sep:
+        if not spec:
+            raise ValueError("Invalid template spec: expected TEMPLATE[=TARGET], got an empty value.")
+        return spec, "."
+    if not template or not target:
+        raise ValueError(f"Invalid template spec {spec!r}: expected TEMPLATE=TARGET (or a bare TEMPLATE for the root).")
+    return template, target
+
+
 def run_create(
-    template: str,
+    templates: Sequence[str],
     output_dir: Path = Path("."),
     checkout: str | None = None,
 ) -> Path:
-    """Create a new project from a cookiecutter template and write .cruft.json."""
+    """Create a new project from one or more cookiecutter templates and write rebake.yaml.
+
+    The first value is the template that creates the project directory. Remaining
+    values are ``TEMPLATE[=TARGET]`` specs (see ``_parse_template_spec``) rendered
+    into that project via ``run_add`` — cookiecutter's wrapper is stripped and each
+    entry is appended to rebake.yaml. A bare subsequent spec targets the project
+    root. When templates create the same file during this command, the later copy
+    wins; overlapping links have no guaranteed precedence during future updates.
+    """
+    template_specs = list(templates)
+    if not template_specs:
+        raise ValueError("At least one template is required.")
+
+    template = template_specs[0]
+    links = [_parse_template_spec(spec) for spec in template_specs[1:]]
+    for _, target_directory in links:
+        _reject_unsafe_target(target_directory)
+
     output_dir = output_dir.resolve()
 
-    commit = get_template_head_commit(template, checkout=checkout)
+    commit = resolve_template_commit(template, checkout=checkout)
     rendered_path_str, context = cookiecutter_interactive(template, output_dir, checkout=checkout)
     rendered_project = Path(rendered_path_str)
 
-    config = CruftConfig(
+    entry = TemplateEntry(
         template=template,
         commit=commit,
         context={"cookiecutter": context},
         checkout=checkout,
     )
-    config.save(rendered_project)
+    RebakeConfig(templates=[entry]).save(rendered_project)
+
+    for add_template, target_directory in links:
+        run_add(add_template, project_dir=rendered_project, target_directory=target_directory)
 
     return rendered_project
+
+
+def run_add(
+    template: str,
+    project_dir: Path = Path("."),
+    target_directory: str = ".",
+    checkout: str | None = None,
+) -> TemplateEntry:
+    """Render an additional template into ``project_dir/target_directory`` and register it.
+
+    Appends an entry to the repository's root ``rebake.yaml`` (creating the file
+    when absent). cookiecutter always renders inside a top-level project folder;
+    that wrapper is stripped so the template's files land directly under
+    ``target_directory``.
+    """
+    project_dir = project_dir.resolve()
+    target = project_dir / target_directory
+    # The entry must live under the repository: reject a target that is outside
+    # project_dir (e.g. `-t ../foo` or an absolute path), which a later `update`
+    # would otherwise re-render outside project_dir.
+    if not target.resolve().is_relative_to(project_dir):
+        raise ValueError(f"target_directory {target_directory!r} is outside the repository root {project_dir}.")
+
+    # Load (or start) the config before writing anything. A missing
+    # rebake.yaml/.cruft.json starts a fresh config; an existing but malformed
+    # file raises here (ValueError, intentionally left to propagate) before any
+    # rendered files land on disk, so a failed add leaves no orphaned files.
+    try:
+        config = RebakeConfig.load(project_dir)
+    except FileNotFoundError:
+        config = RebakeConfig(templates=[])
+
+    commit = resolve_template_commit(template, checkout=checkout)
+
+    target.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rendered_path_str, context = cookiecutter_interactive(template, Path(tmpdir), checkout=checkout)
+        # Strip the cookiecutter project-name wrapper: copy its contents into target.
+        shutil.copytree(rendered_path_str, target, dirs_exist_ok=True)
+
+    entry = TemplateEntry(
+        template=template,
+        commit=commit,
+        context={"cookiecutter": context},
+        checkout=checkout,
+        target_directory=target_directory,
+    )
+    config.templates.append(entry)
+    config.save(project_dir)
+
+    return entry
