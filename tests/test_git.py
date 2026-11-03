@@ -112,6 +112,15 @@ def test_redirect_patch_paths_leaves_unrelated_paths_untouched() -> None:
     assert result == patch
 
 
+def test_redirect_patch_paths_does_not_match_path_prefix() -> None:
+    """A rename header whose new path merely starts with the moved path must stay intact."""
+    patch = b"diff --git a/x b/xy\nsimilarity index 90%\nrename from x\nrename to xy\n"
+
+    result = redirect_patch_paths(patch, {"x": "docs/x"})
+
+    assert result == patch
+
+
 @pytest.fixture
 def template_repo(tmp_path: Path) -> tuple[str, str]:
     """A local git repo with a tag and a branch. Returns (url, head_commit)."""
@@ -274,3 +283,36 @@ def test_apply_patch_redirects_to_git_moved_file(tmp_path: Path) -> None:
     assert success, stderr
     assert (tmp_path / "docs" / "README.md").read_text() == "hello world\n"
     assert not (tmp_path / "README.md").exists()
+
+
+def test_apply_patch_redirects_git_moved_file_in_subdirectory(tmp_path: Path) -> None:
+    """A move inside a target sub-directory should redirect paths relative to that sub-directory."""
+    _init_repo(tmp_path)
+    target = tmp_path / "services" / "api"
+    target.mkdir(parents=True)
+    (target / "config.txt").write_text("hello\n")
+    _commit_all(tmp_path, "initial")
+
+    (target / "conf").mkdir()
+    subprocess.run(
+        ["git", "mv", "services/api/config.txt", "services/api/conf/config.txt"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    _commit_all(tmp_path, "move config")
+
+    old_dir = tmp_path / "old_render"
+    new_dir = tmp_path / "new_render"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    (old_dir / "config.txt").write_text("hello\n")
+    (new_dir / "config.txt").write_text("hello world\n")
+
+    patch = generate_diff(old_dir, new_dir)
+
+    success, stderr = apply_patch(patch, target)
+
+    assert success, stderr
+    assert (target / "conf" / "config.txt").read_text() == "hello world\n"
+    assert not (target / "config.txt").exists()

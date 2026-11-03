@@ -154,7 +154,7 @@ def redirect_patch_paths(patch: bytes, renames: dict[str, str]) -> bytes:
     for old, new in renames.items():
         o = old.encode()
         n = new.encode()
-        patch = patch.replace(b"diff --git a/" + o + b" b/" + o, b"diff --git a/" + n + b" b/" + n)
+        patch = patch.replace(b"diff --git a/" + o + b" b/" + o + b"\n", b"diff --git a/" + n + b" b/" + n + b"\n")
         patch = patch.replace(b"--- a/" + o + b"\n", b"--- a/" + n + b"\n")
         patch = patch.replace(b"+++ b/" + o + b"\n", b"+++ b/" + n + b"\n")
     return patch
