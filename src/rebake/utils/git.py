@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -102,20 +103,24 @@ def get_renamed_paths(project_dir: Path = Path(".")) -> dict[str, str]:
     """
     project_dir = project_dir.resolve()
     git_root = _git_root(project_dir)
-    rel_prefix = str(project_dir.relative_to(git_root))
+    rel_prefix = project_dir.relative_to(git_root).as_posix()
 
     result = subprocess.run(
         ["git", "log", "--reverse", "-M", "--diff-filter=R", "--name-status", "--format=", "--", "."],
         capture_output=True,
         text=True,
-        check=True,
         cwd=str(project_dir),
     )
+    # A repository without commits has no history to follow
+    if result.returncode != 0:
+        return {}
 
     # Track each chain by its original path; reverse maps a current path back to
     # its origin so a follow-up rename extends the existing chain.
     origin_to_current: dict[str, str] = {}
     current_to_origin: dict[str, str] = {}
+    # An origin that was recreated and moved again has two candidate destinations
+    ambiguous: set[str] = set()
     for line in result.stdout.splitlines():
         parts = line.split("\t")
         if len(parts) != 3 or not parts[0].startswith("R"):
@@ -124,14 +129,20 @@ def get_renamed_paths(project_dir: Path = Path(".")) -> dict[str, str]:
         new = _strip_repo_prefix(parts[2], rel_prefix)
         if old is None or new is None:
             continue
-        origin = current_to_origin.pop(old, old)
+        if old in current_to_origin:
+            origin = current_to_origin.pop(old)
+        else:
+            origin = old
+            if origin in origin_to_current:
+                ambiguous.add(origin)
+                current_to_origin.pop(origin_to_current[origin], None)
         origin_to_current[origin] = new
         current_to_origin[new] = origin
 
     return {
         origin: current
         for origin, current in origin_to_current.items()
-        if not (project_dir / origin).exists() and (project_dir / current).exists()
+        if origin not in ambiguous and not (project_dir / origin).exists() and (project_dir / current).exists()
     }
 
 
@@ -148,16 +159,52 @@ def _strip_repo_prefix(path: str, rel_prefix: str) -> str | None:
 def redirect_patch_paths(patch: bytes, renames: dict[str, str]) -> bytes:
     """Rewrite diff header paths so hunks target their renamed destination.
 
-    Substitutes the old path with the new path in the ``diff --git``, ``---``
-    and ``+++`` header lines for each rename, leaving unrelated entries intact.
+    Only entries that modify or delete an existing file are redirected. New-file,
+    rename and copy entries are left intact because their source path is not the
+    file the user moved. Hunk bodies are never touched.
     """
+    if not renames:
+        return patch
+    entries = re.split(rb"(?m)^(?=diff --git )", patch)
+    return b"".join(_redirect_entry(entry, renames) for entry in entries)
+
+
+def _redirect_entry(entry: bytes, renames: dict[str, str]) -> bytes:
+    lines = entry.splitlines(keepends=True)
+    if not lines or not lines[0].startswith(b"diff --git "):
+        return entry
+
+    header_end = len(lines)
+    for i, line in enumerate(lines[1:], start=1):
+        if line.startswith((b"@@", b"GIT binary patch")):
+            header_end = i
+            break
+    header = lines[:header_end]
+
+    if any(line.startswith((b"new file mode", b"rename from", b"copy from")) for line in header):
+        return entry
+
     for old, new in renames.items():
         o = old.encode()
+        if header[0].rstrip(b"\n") != b"diff --git a/" + o + b" b/" + o:
+            continue
         n = new.encode()
-        patch = patch.replace(b"diff --git a/" + o + b" b/" + o + b"\n", b"diff --git a/" + n + b" b/" + n + b"\n")
-        patch = patch.replace(b"--- a/" + o + b"\n", b"--- a/" + n + b"\n")
-        patch = patch.replace(b"+++ b/" + o + b"\n", b"+++ b/" + n + b"\n")
-    return patch
+        rewritten = [b"diff --git a/" + n + b" b/" + n + b"\n"]
+        for line in header[1:]:
+            rewritten.append(
+                _rewrite_file_line(line, b"--- a/", o, n) or _rewrite_file_line(line, b"+++ b/", o, n) or line
+            )
+        return b"".join(rewritten + lines[header_end:])
+    return entry
+
+
+def _rewrite_file_line(line: bytes, prefix: bytes, old: bytes, new: bytes) -> bytes | None:
+    # git appends a tab after ---/+++ paths that contain spaces
+    body = line.rstrip(b"\n")
+    for suffix in (b"", b"\t"):
+        if body == prefix + old + suffix:
+            return prefix + new + suffix + line[len(body) :]
+    return None
 
 
 def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]:

@@ -316,3 +316,119 @@ def test_apply_patch_redirects_git_moved_file_in_subdirectory(tmp_path: Path) ->
     assert success, stderr
     assert (target / "conf" / "config.txt").read_text() == "hello world\n"
     assert not (target / "config.txt").exists()
+
+
+def test_get_renamed_paths_returns_empty_without_commits(tmp_path: Path) -> None:
+    """A repository with no commits yet has no rename history to follow."""
+    _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("hello\n")
+
+    assert get_renamed_paths(tmp_path) == {}
+
+
+def test_get_renamed_paths_skips_ambiguous_chain_after_origin_recreated(tmp_path: Path) -> None:
+    """If an origin path is recreated and moved again, its template file has no single destination."""
+    _init_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("first file\n" * 5)
+    _commit_all(tmp_path, "initial")
+    subprocess.run(["git", "mv", "a.txt", "b.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "a -> b")
+    (tmp_path / "a.txt").write_text("second file\n" * 5)
+    _commit_all(tmp_path, "recreate a")
+    subprocess.run(["git", "mv", "a.txt", "c.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "a -> c")
+    subprocess.run(["git", "mv", "b.txt", "d.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "b -> d")
+
+    assert "a.txt" not in get_renamed_paths(tmp_path)
+
+
+def test_redirect_patch_paths_rewrites_deleted_file_entry() -> None:
+    patch = b"diff --git a/x b/x\ndeleted file mode 100644\n--- a/x\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
+
+    result = redirect_patch_paths(patch, {"x": "docs/x"})
+
+    assert result == (
+        b"diff --git a/docs/x b/docs/x\ndeleted file mode 100644\n--- a/docs/x\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
+    )
+
+
+def test_redirect_patch_paths_leaves_new_file_entry_untouched() -> None:
+    """A template adding a file at a path the user moved away from must create it there."""
+    patch = b"diff --git a/x b/x\nnew file mode 100644\n--- /dev/null\n+++ b/x\n@@ -0,0 +1 @@\n+a\n"
+
+    result = redirect_patch_paths(patch, {"x": "docs/x"})
+
+    assert result == patch
+
+
+def test_redirect_patch_paths_leaves_template_rename_entry_untouched() -> None:
+    patch = (
+        b"diff --git a/x b/y\nsimilarity index 80%\nrename from x\nrename to y\n--- a/x\n+++ b/y\n@@ -1 +1 @@\n-a\n+b\n"
+    )
+
+    result = redirect_patch_paths(patch, {"x": "docs/x"})
+
+    assert result == patch
+
+
+def test_redirect_patch_paths_does_not_rewrite_hunk_body() -> None:
+    """Lines inside a hunk that look like headers are file content, not patch headers."""
+    patch = (
+        b"diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n---- a/x\n-+++ b/x\n+diff --git a/x b/x\n+changed\n"
+    )
+
+    result = redirect_patch_paths(patch, {"x": "docs/x"})
+
+    assert result == (
+        b"diff --git a/docs/x b/docs/x\n--- a/docs/x\n+++ b/docs/x\n@@ -1,2 +1,2 @@\n"
+        b"---- a/x\n"
+        b"-+++ b/x\n"
+        b"+diff --git a/x b/x\n"
+        b"+changed\n"
+    )
+
+
+def test_apply_patch_redirects_moved_file_with_space_in_name(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "my file.txt").write_text("hello\n")
+    _commit_all(tmp_path, "initial")
+    (tmp_path / "docs").mkdir()
+    subprocess.run(["git", "mv", "my file.txt", "docs/my file.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "move")
+
+    old_dir = tmp_path / "old_render"
+    new_dir = tmp_path / "new_render"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    (old_dir / "my file.txt").write_text("hello\n")
+    (new_dir / "my file.txt").write_text("hello world\n")
+
+    success, stderr = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert success, stderr
+    assert (tmp_path / "docs" / "my file.txt").read_text() == "hello world\n"
+
+
+def test_apply_patch_keeps_other_files_when_template_renames_moved_file(tmp_path: Path) -> None:
+    """A template rename of a user-moved file must not make the whole patch malformed."""
+    _init_repo(tmp_path)
+    (tmp_path / "x.txt").write_text("".join(f"line{i}\n" for i in range(10)))
+    (tmp_path / "other.txt").write_text("old\n")
+    _commit_all(tmp_path, "initial")
+    (tmp_path / "docs").mkdir()
+    subprocess.run(["git", "mv", "x.txt", "docs/x.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "move")
+
+    old_dir = tmp_path / "old_render"
+    new_dir = tmp_path / "new_render"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    (old_dir / "x.txt").write_text("".join(f"line{i}\n" for i in range(10)))
+    (new_dir / "y.txt").write_text("".join(f"line{i}\n" for i in range(10)) + "extra\n")
+    (old_dir / "other.txt").write_text("old\n")
+    (new_dir / "other.txt").write_text("new\n")
+
+    apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert (tmp_path / "other.txt").read_text() == "new\n"
