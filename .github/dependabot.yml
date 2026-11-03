@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Wait before proposing fresh releases to avoid broken or compromised versions.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # github-actions supports only default-days (no semver-specific cooldown).
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "ci"
+      include: "scope"
