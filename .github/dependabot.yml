@@ -25,6 +25,13 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # release.yml hands dist/ from upload-artifact to download-artifact, so
+      # bump them together (all update types) to keep the pair compatible.
+      # Must come first: Dependabot assigns an update to the first matching group.
+      artifact-actions:
+        patterns:
+          - "actions/upload-artifact"
+          - "actions/download-artifact"
       actions-minor-and-patch:
         update-types: ["minor", "patch"]
     commit-message:
