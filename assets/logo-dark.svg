@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="-4 -4 136 136" role="img" aria-label="rebake logo">
+  <title>rebake</title>
+  <defs>
+    <linearGradient id="crust" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4AE5E"/>
+      <stop offset="1" stop-color="#D2702B"/>
+    </linearGradient>
+  </defs>
+  <path d="M98.79,25.36 A52,52 0 1 1 24.17,30.58" fill="none" stroke="#F2C38B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M16.51,24.15 L32.52,20.62 L31.83,37.00 Z" fill="#F2C38B" stroke="#F2C38B" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M28,83 Q28,89 34,89 H94 Q100,89 100,83 V71 C100,54 84,45 64,45 C44,45 28,54 28,71 Z" fill="url(#crust)"/>
+  <path d="M28,80 H100 V83 Q100,89 94,89 H34 Q28,89 28,83 Z" fill="#B85A22" opacity="0.55"/>
+  <path d="M43,68 L50,58 M57,70 L64,60 M71,70 L78,60 M85,68 L91,59" stroke="#FFE8C7" stroke-width="4.5" stroke-linecap="round"/>
+</svg>
