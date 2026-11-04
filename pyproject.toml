@@ -20,7 +20,7 @@ rebake = "rebake.cli:app"
 
 [dependency-groups]
 dev = [
-    "pyright[nodejs]>=1.1.400",
+    "pyright[nodejs]>=1.1.414",
     "pytest>=8.3.5",
     "pytest-mock>=3.14.0",
     "ruff>=0.9.0",

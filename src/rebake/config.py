@@ -146,7 +146,7 @@ class RebakeConfig:
         if not isinstance(data, dict):
             raise ValueError(f"Unrecognized config schema in {project_dir}")
         # isinstance only narrows to dict[Unknown, Unknown]; both supported formats are
-        # string-keyed mappings, and each entry is validated by TemplateEntry.from_dict.
+        # string-keyed mappings. Values stay Any: their shape is not validated here.
         mapping = cast(dict[str, Any], data)
 
         # Multi-template form: {"templates": [...]}
