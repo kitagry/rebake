@@ -20,10 +20,10 @@ rebake = "rebake.cli:app"
 
 [dependency-groups]
 dev = [
+    "pyright[nodejs]>=1.1.400",
     "pytest>=8.3.5",
     "pytest-mock>=3.14.0",
     "ruff>=0.9.0",
-    "pyrefly>=0.17.0",
 ]
 
 [tool.pytest.ini_options]
@@ -48,3 +48,19 @@ packages = ["src/rebake"]
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+# src/ is small and fully annotated, so it is checked strictly. `strict = ["src"]` is not
+# used because it would take precedence over every rule override below.
+typeCheckingMode = "strict"
+# cookiecutter ships neither stubs nor py.typed, and no types-cookiecutter exists.
+# pyright still infers its types from source, so only the "stub missing" report is noise.
+reportMissingTypeStubs = false
+executionEnvironments = [
+    # tests/ lean on mocks, fixtures and private helpers whose types are mostly Unknown,
+    # so the rules that demand full annotations are relaxed there.
+    { root = "tests", reportUnknownArgumentType = false, reportUnknownParameterType = false, reportMissingParameterType = false, reportUnknownMemberType = false, reportUnknownVariableType = false, reportUnknownLambdaType = false, reportMissingTypeArgument = false, reportUnusedFunction = false, reportPrivateUsage = false },
+    { root = "src" },
+]
