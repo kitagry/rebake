@@ -155,3 +155,13 @@ def test_cli_check_unknown_name_exits_error_not_outdated(tmp_path):
     result = runner.invoke(app, ["check", str(tmp_path), "-n", "nope"])
 
     assert result.exit_code == 2
+
+
+def test_check_cli_reports_malformed_config_without_traceback(tmp_path):
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": 5}))
+
+    result = runner.invoke(app, ["check", str(tmp_path)])
+
+    assert result.exit_code == 2
+    assert "'templates' must be a list of template links" in result.output
+    assert "Traceback" not in result.output

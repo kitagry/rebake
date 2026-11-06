@@ -12,7 +12,7 @@ from rebake.utils.git import (
     generate_diff,
     is_working_tree_clean,
 )
-from rebake.utils.template import render_template
+from rebake.utils.template import remove_skipped_paths, render_template
 from rebake.utils.variables import prompt_all_variables
 
 console = Console()
@@ -72,6 +72,8 @@ def _reparametrize_entry(entry: TemplateEntry, project_dir: Path, config: Rebake
         new_output.mkdir()
         old_rendered = render_template(template_dir, old_context, old_output)
         new_rendered = render_template(template_dir, new_context, new_output)
+        remove_skipped_paths(old_rendered, entry.skip)
+        remove_skipped_paths(new_rendered, entry.skip)
 
         patch = generate_diff(old_rendered, new_rendered)
 

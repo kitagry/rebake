@@ -171,3 +171,21 @@ def test_reparametrize_multi_template_unknown_name_errors(tmp_path: Path) -> Non
     assert result.exit_code != 0
     assert "No template link named 'nope'" in result.output
     assert rebake_yaml.read_text() == before
+
+
+@pytest.mark.e2e
+def test_reparametrize_ignores_skipped_paths(project_dir: Path) -> None:
+    rebake_cfg = yaml.safe_load((project_dir / "rebake.yaml").read_text())
+    rebake_cfg["skip"] = ["README.md"]
+    (project_dir / "rebake.yaml").write_text(yaml.dump(rebake_cfg, allow_unicode=True, sort_keys=False))
+    _git(["add", "rebake.yaml"], project_dir)
+    _git(["commit", "-m", "add skip"], project_dir)
+
+    with patch(
+        "rebake.reparametrize.prompt_all_variables",
+        return_value={"project_name": "new-project"},
+    ):
+        result = runner.invoke(app, ["reparametrize", str(project_dir)])
+
+    assert result.exit_code == 0, result.output
+    assert (project_dir / "README.md").read_text() == "# my-project\n"
