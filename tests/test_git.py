@@ -563,3 +563,28 @@ def test_patch_target_paths_lists_modified_and_deleted_files_only() -> None:
     )
 
     assert patch_target_paths(patch) == ["mod.txt", "del.txt", "日.txt"]
+
+
+@pytest.mark.usefixtures("quoted_git_paths")
+def test_generate_diff_strips_non_ascii_render_directory(tmp_path: Path) -> None:
+    """A non-ASCII project slug must not leak into patch paths through git's C-quoting."""
+    old_dir = tmp_path / "old" / "日本"
+    new_dir = tmp_path / "new" / "日本"
+    old_dir.mkdir(parents=True)
+    new_dir.mkdir(parents=True)
+    (old_dir / "x.txt").write_text("a\n")
+    (new_dir / "x.txt").write_text("b\n")
+
+    patch = generate_diff(old_dir, new_dir)
+
+    assert patch.splitlines()[0] == b"diff --git a/x.txt b/x.txt"
+
+
+def test_redirect_patch_paths_tab_terminates_quoted_destination_with_space() -> None:
+    """git ends ---/+++ paths containing spaces with a tab even when the path is quoted."""
+    patch = b"diff --git a/x b/x\nindex 1111111..2222222 100644\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+
+    result = redirect_patch_paths(patch, {"x": 'docs/q" s.txt'})
+
+    assert b'--- "a/docs/q\\" s.txt"\t\n' in result
+    assert b'+++ "b/docs/q\\" s.txt"\t\n' in result

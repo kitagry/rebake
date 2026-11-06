@@ -237,7 +237,7 @@ def _parse_header_path(line: bytes) -> bytes | None:
     """Return the unquoted path of a `diff --git` line whose a/ and b/ sides are the same file."""
     quoted = re.fullmatch(rb'diff --git "a/((?:[^"\\]|\\.)*)" "b/\1"\n?', line)
     if quoted is not None:
-        return _unquote_path(b'"' + quoted.group(1) + b'"')
+        return _unescape_c(quoted.group(1))
     match = re.fullmatch(rb"diff --git a/(.+) b/\1\n?", line)
     return None if match is None else match.group(1)
 
@@ -248,10 +248,9 @@ def _rewrite_file_line(line: bytes, marker: bytes, side: bytes, old: bytes, new:
     body = line[len(marker) :].rstrip(b"\n")
     if _unquote_path(body.removesuffix(b"\t")) != side + old:
         return None
-    path = _quote_path(side + new)
-    # Like git, terminate unquoted paths containing spaces with a tab
-    suffix = b"\t" if b" " in path and not path.startswith(b'"') else b""
-    return marker + path + suffix + line[len(marker) + len(body) :]
+    # Like git, terminate paths containing spaces with a tab, whether quoted or not
+    suffix = b"\t" if b" " in new else b""
+    return marker + _quote_path(side + new) + suffix + line[len(marker) + len(body) :]
 
 
 _C_UNESCAPES = {b"a": b"\a", b"b": b"\b", b"t": b"\t", b"n": b"\n", b"v": b"\v", b"f": b"\f", b"r": b"\r"}
@@ -263,14 +262,19 @@ def _unquote_path(path: bytes) -> bytes:
     """Decode a path that git C-quoted (e.g. "\\346\\227\\245.txt"); unquoted paths are returned as is."""
     if len(path) < 2 or not (path.startswith(b'"') and path.endswith(b'"')):
         return path
+    return _unescape_c(path[1:-1])
+
+
+def _unescape_c(escaped: bytes) -> bytes:
+    """Decode the C escapes inside a git-quoted path, without the surrounding quotes."""
 
     def unescape(match: re.Match[bytes]) -> bytes:
-        escaped = match.group(1)
-        if len(escaped) == 3:
-            return bytes([int(escaped, 8)])
-        return _C_UNESCAPES.get(escaped, escaped)
+        seq = match.group(1)
+        if len(seq) == 3:
+            return bytes([int(seq, 8)])
+        return _C_UNESCAPES.get(seq, seq)
 
-    return re.sub(rb"\\([0-7]{3}|.)", unescape, path[1:-1])
+    return re.sub(rb"\\([0-7]{3}|.)", unescape, escaped)
 
 
 def _quote_path(path: bytes) -> bytes:
@@ -346,13 +350,15 @@ def generate_diff(old_dir: Path, new_dir: Path) -> bytes:
     old_real = old_dir.resolve()
     new_real = new_dir.resolve()
 
+    # core.quotePath=false keeps non-ASCII directory names raw so the prefix replacement below matches
+    diff_cmd = ["git", "-c", "core.quotePath=false", "diff", "--no-index", "--binary"]
     # Run from the common ancestor with relative paths to avoid absolute-path and symlink quirks
     common = _common_ancestor(old_real, new_real)
     if common is not None:
         old_rel = str(old_real.relative_to(common))
         new_rel = str(new_real.relative_to(common))
         result = subprocess.run(
-            ["git", "diff", "--no-index", "--binary", old_rel, new_rel],
+            [*diff_cmd, old_rel, new_rel],
             capture_output=True,
             cwd=str(common),
         )
@@ -361,7 +367,7 @@ def generate_diff(old_dir: Path, new_dir: Path) -> bytes:
         new_prefix = (new_rel + "/").encode()
     else:
         result = subprocess.run(
-            ["git", "diff", "--no-index", "--binary", str(old_real), str(new_real)],
+            [*diff_cmd, str(old_real), str(new_real)],
             capture_output=True,
         )
         raw = result.stdout
