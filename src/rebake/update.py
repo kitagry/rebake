@@ -15,7 +15,7 @@ from rebake.utils.git import (
     is_working_tree_clean,
     resolve_template_commit,
 )
-from rebake.utils.template import render_template
+from rebake.utils.template import remove_skipped_paths, render_template
 from rebake.utils.variables import detect_new_variables, prompt_new_variables
 
 console = Console()
@@ -134,6 +134,8 @@ def _update_entry(
         new_output.mkdir()
         old_rendered = render_template(old_template_dir, merged_context, old_output)
         new_rendered = render_template(new_template_dir, merged_context, new_output)
+        remove_skipped_paths(old_rendered, entry.skip)
+        remove_skipped_paths(new_rendered, entry.skip)
 
         patch = generate_diff(old_rendered, new_rendered)
 

@@ -42,20 +42,20 @@ def test_update_removes_deleted_file(project_dir: Path, template_repo: Path) -> 
     assert not (project_dir / "CONTRIBUTING.md").exists()
 
 
-def _commit_rebake_yaml(project_dir: Path, hooks: dict) -> None:
+def _commit_rebake_yaml(project_dir: Path, **fields: object) -> None:
     import yaml
 
     rebake_cfg = yaml.safe_load((project_dir / "rebake.yaml").read_text())
-    rebake_cfg["hooks"] = hooks
+    rebake_cfg.update(fields)
     (project_dir / "rebake.yaml").write_text(yaml.dump(rebake_cfg, allow_unicode=True, sort_keys=False))
     subprocess.run(["git", "add", "rebake.yaml"], cwd=project_dir, check=True)
-    subprocess.run(["git", "commit", "-m", "add hooks"], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "update rebake.yaml"], cwd=project_dir, check=True)
 
 
 @pytest.mark.e2e
 def test_update_runs_pre_update_hook(project_dir: Path, template_repo: Path) -> None:
     sentinel = project_dir / "pre_hook_ran"
-    _commit_rebake_yaml(project_dir, {"pre-update": [f"touch {sentinel}"]})
+    _commit_rebake_yaml(project_dir, hooks={"pre-update": [f"touch {sentinel}"]})
 
     result = runner.invoke(app, ["update", str(project_dir)])
     assert result.exit_code == 0
@@ -65,7 +65,7 @@ def test_update_runs_pre_update_hook(project_dir: Path, template_repo: Path) -> 
 @pytest.mark.e2e
 def test_update_runs_post_update_hook(project_dir: Path, template_repo: Path) -> None:
     sentinel = project_dir / "post_hook_ran"
-    _commit_rebake_yaml(project_dir, {"post-update": [f"touch {sentinel}"]})
+    _commit_rebake_yaml(project_dir, hooks={"post-update": [f"touch {sentinel}"]})
 
     result = runner.invoke(app, ["update", str(project_dir)])
     assert result.exit_code == 0
@@ -79,7 +79,7 @@ def test_update_pre_hook_failure_aborts_update(project_dir: Path, template_repo:
     subprocess.run(["git", "add", "."], cwd=template_repo, check=True)
     subprocess.run(["git", "commit", "-m", "add newfile.txt"], cwd=template_repo, check=True)
 
-    _commit_rebake_yaml(project_dir, {"pre-update": ["exit 1"]})
+    _commit_rebake_yaml(project_dir, hooks={"pre-update": ["exit 1"]})
 
     result = runner.invoke(app, ["update", str(project_dir)])
     assert result.exit_code != 0
@@ -89,7 +89,7 @@ def test_update_pre_hook_failure_aborts_update(project_dir: Path, template_repo:
 @pytest.mark.e2e
 def test_update_hook_receives_env_vars(project_dir: Path, template_repo: Path) -> None:
     out = project_dir / "env_out.txt"
-    _commit_rebake_yaml(project_dir, {"post-update": [f"echo $REBAKE_TEMPLATE > {out}"]})
+    _commit_rebake_yaml(project_dir, hooks={"post-update": [f"echo $REBAKE_TEMPLATE > {out}"]})
 
     result = runner.invoke(app, ["update", str(project_dir)])
     assert result.exit_code == 0
@@ -119,3 +119,21 @@ def test_update_with_checkout_stops_at_midway_commit(project_dir: Path, template
     # update rewrites the legacy top-level fixture into the templates: list form.
     config = yaml.safe_load((project_dir / "rebake.yaml").read_text())
     assert config["templates"][0]["checkout"] == "v1"
+
+
+@pytest.mark.e2e
+def test_update_ignores_skipped_paths(project_dir: Path, template_repo: Path) -> None:
+    _commit_rebake_yaml(project_dir, skip=["README.md", "*.lock"])
+    template_root = template_repo / "{{cookiecutter.project_name}}"
+    (template_root / "README.md").write_text("# changed by template\n")
+    (template_root / "uv.lock").write_text("lock\n")
+    (template_root / "CONTRIBUTING.md").write_text("updated\n")
+    subprocess.run(["git", "add", "."], cwd=template_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "update template"], cwd=template_repo, check=True)
+
+    result = runner.invoke(app, ["update", str(project_dir)])
+
+    assert result.exit_code == 0, result.output
+    assert (project_dir / "README.md").read_text() == "# my-project\n"
+    assert not (project_dir / "uv.lock").exists()
+    assert (project_dir / "CONTRIBUTING.md").read_text() == "updated\n"

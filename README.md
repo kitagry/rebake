@@ -279,9 +279,9 @@ templates:
       cookiecutter:
         project_name: my-repo
         author: Jane Doe
-    skip:                   # optional: file patterns to skip
+    skip:                   # optional: paths the template never touches
       - go.sum
-      - "*.lock"
+      - "**/*.lock"
     hooks:                  # optional: shell commands to run on update
       pre-update:
         - make lint
@@ -305,7 +305,7 @@ templates:
 | `name` | | Label to target this link from the CLI. Must be unique and match `[a-zA-Z0-9_-]+`. |
 | `checkout` | | Branch, tag or commit to track. |
 | `target_directory` | | Sub-path within your repository that the link's patches apply to (default: `.`). |
-| `skip` | | File patterns to skip. |
+| `skip` | | Paths that `update` / `reparametrize` leave alone ([Skipping files](#skipping-files)). |
 | `hooks` | | `pre-update` / `post-update` shell commands ([Hooks](#hooks)). |
 
 `target_directory` is intentionally **not** named `directory`: cruft's
@@ -315,6 +315,18 @@ the template repo*), so rebake ignores that key on read and reserves the name.
 `name` is an optional label for a link. On a multi-template repo it lets you
 target one link from the CLI, e.g. `rebake update --checkout go@main` follows
 `main` only for the link named `go`.
+
+### Skipping files
+
+`skip` lists paths, relative to `target_directory`, that `rebake update` and
+`rebake reparametrize` never create, modify or delete. Use it for files you own
+after the initial render, such as lock files. The semantics match cruft's, so a
+`.cruft.json` `skip` list keeps its meaning:
+
+- An entry without `*` is a literal path. If it names a directory, rebake skips
+  the whole directory.
+- An entry containing `*` is a glob pattern, matched like Python's `Path.glob`.
+  `*.lock` matches only at the top level. Use `**/*.lock` to match at any depth.
 
 ### Legacy formats (read-only)
 
