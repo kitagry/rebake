@@ -477,3 +477,95 @@ def test_select_preserves_config_order_and_dedupes():
 def test_select_unknown_name_raises():
     with pytest.raises(RuntimeError, match=r"No template link named 'nope'"):
         _named_config().select(["a", "nope"])
+
+
+_VALID_ENTRY = {"template": "https://github.com/owner/template", "commit": "abc123"}
+
+
+@pytest.mark.parametrize(
+    ("templates", "message"),
+    [
+        (5, r"'templates' must be a list of template links, got int"),
+        ("foo", r"'templates' must be a list of template links, got str"),
+        ({"a": 1}, r"'templates' must be a list of template links, got dict"),
+        (["just-a-string"], r"templates\[0\] must be a mapping, got str"),
+        ([_VALID_ENTRY, 3], r"templates\[1\] must be a mapping, got int"),
+    ],
+    ids=["int", "str", "mapping", "string-entry", "second-entry-int"],
+)
+def test_load_rejects_malformed_templates(tmp_path, templates, message):
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": templates}))
+
+    with pytest.raises(ValueError, match=rf"Invalid config in .*rebake\.yaml: {message}"):
+        RebakeConfig.load(tmp_path)
+
+
+@pytest.mark.parametrize("missing", ["template", "commit"])
+def test_load_rejects_entry_missing_required_field(tmp_path, missing):
+    entry = {k: v for k, v in _VALID_ENTRY.items() if k != missing}
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": [_VALID_ENTRY, entry]}))
+
+    with pytest.raises(ValueError, match=rf"templates\[1\]: missing required field '{missing}'"):
+        RebakeConfig.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("template", 1, r"'template' must be a non-empty string"),
+        ("template", "", r"'template' must be a non-empty string"),
+        ("commit", 1234567, r"'commit' must be a non-empty string"),
+        ("context", 3, r"'context' must be a mapping"),
+        ("checkout", ["main"], r"'checkout' must be a string"),
+        ("name", 1, r"'name' must be a string"),
+        ("target_directory", 1, r"'target_directory' must be a string"),
+        ("skip", "*.md", r"'skip' must be a list of strings"),
+        ("skip", ["*.md", 1], r"'skip' must be a list of strings"),
+        ("hooks", ["x"], r"'hooks' must be a mapping of hook name to a list of commands"),
+        ("hooks", {"pre-update": "make"}, r"'hooks' must be a mapping of hook name to a list of commands"),
+        ("hooks", {"pre-update": [1]}, r"'hooks' must be a mapping of hook name to a list of commands"),
+    ],
+    ids=[
+        "template-int",
+        "template-empty",
+        "commit-int",
+        "context-int",
+        "checkout-list",
+        "name-int",
+        "target_directory-int",
+        "skip-str",
+        "skip-non-str-item",
+        "hooks-list",
+        "hooks-str-commands",
+        "hooks-non-str-command",
+    ],
+)
+def test_load_rejects_entry_field_with_wrong_type(tmp_path, field, value, message):
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": [{**_VALID_ENTRY, field: value}]}))
+
+    with pytest.raises(ValueError, match=rf"Invalid config in .*rebake\.yaml: templates\[0\]: {message}"):
+        RebakeConfig.load(tmp_path)
+
+
+@pytest.mark.parametrize("field", ["checkout", "name", "target_directory"])
+def test_load_accepts_null_optional_string_fields(tmp_path, field):
+    # cruft writes `"checkout": null`; treat an explicit null like an absent key.
+    (tmp_path / ".cruft.json").write_text(json.dumps({**_VALID_ENTRY, field: None}))
+
+    entry = _first(tmp_path)
+
+    assert getattr(entry, field) == (None if field != "target_directory" else ".")
+
+
+def test_load_rejects_malformed_legacy_rebake_yaml(tmp_path):
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({**_VALID_ENTRY, "skip": "*.md"}))
+
+    with pytest.raises(ValueError, match=r"Invalid config in .*rebake\.yaml: 'skip' must be a list of strings"):
+        RebakeConfig.load(tmp_path)
+
+
+def test_load_rejects_malformed_legacy_cruft_json(tmp_path):
+    (tmp_path / ".cruft.json").write_text(json.dumps({"template": "https://github.com/owner/template"}))
+
+    with pytest.raises(ValueError, match=r"Invalid config in .*\.cruft\.json: missing required field 'commit'"):
+        RebakeConfig.load(tmp_path)
