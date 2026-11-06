@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kitagry/rebake/main/assets/logo-dark.svg">
-  <img alt="rebake logo" src="https://raw.githubusercontent.com/kitagry/rebake/main/assets/logo-light.svg" width="128" height="128">
-</picture>
+<img alt="rebake logo" src="https://raw.githubusercontent.com/kitagry/rebake/main/assets/logo.svg" width="128" height="128">
 
 <h1>rebake</h1>
 

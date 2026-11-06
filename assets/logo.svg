@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="5 6 118 118" role="img" aria-label="rebake logo">
+  <title>rebake</title>
+  <defs>
+    <path id="cookie" d="M38,22 H90 Q106,22 106,38 V90 Q106,106 90,106 H38 Q22,106 22,90 V38 Q22,22 38,22 Z"/>
+    <path id="top" d="M42.5,26.5 H85.5 Q101.5,26.5 101.5,42.5 V85.5 Q101.5,101.5 85.5,101.5 H42.5 Q26.5,101.5 26.5,85.5 V42.5 Q26.5,26.5 42.5,26.5 Z"/>
+    <path id="piece-region" d="M64,-20 H140 V64 H64 Z"/>
+    <clipPath id="whole">
+      <use href="#cookie"/>
+      <use href="#cookie" transform="translate(0 6)"/>
+    </clipPath>
+    <clipPath id="piece">
+      <use href="#piece-region"/>
+    </clipPath>
+    <mask id="body">
+      <rect x="-20" y="-30" width="180" height="200" fill="#fff"/>
+      <use href="#piece-region" fill="#000"/>
+    </mask>
+  </defs>
+  <!-- the remaining cookie -->
+  <g mask="url(#body)">
+    <use href="#cookie" transform="translate(0 6)" fill="#B07E3E"/>
+    <use href="#cookie" fill="#D6A65D"/>
+    <use href="#top" fill="#EFCF8E"/>
+  </g>
+  <!-- the freshly re-baked piece, pressed back in slightly askew -->
+  <g transform="translate(1.5 -2) rotate(4 85 43)">
+    <g clip-path="url(#piece)">
+      <use href="#cookie" transform="translate(0 6)" fill="#C9964F"/>
+      <use href="#cookie" fill="#E9C887"/>
+      <use href="#top" fill="#FAE6BE"/>
+    </g>
+    <path d="M64,0 V64 H140" fill="none" stroke="#9A6A2E" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#whole)"/>
+  </g>
+</svg>
