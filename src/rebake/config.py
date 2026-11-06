@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeGuard, cast
 
 import yaml
 
@@ -18,6 +18,104 @@ CRUFT_FILE = ".cruft.json"
 # never become unreachable through the `<name>@<ref>` parser. Matched with
 # `fullmatch` (no anchors) so a trailing newline can't sneak through `$`.
 _NAME_RE = re.compile(r"[a-zA-Z0-9_-]+")
+
+
+def _describe(value: object) -> str:
+    # The type name says what went wrong; only null and the empty string need their value shown.
+    if value is None:
+        return "null"
+    return repr(value) if value == "" else type(value).__name__
+
+
+def _is_str_list(value: object) -> TypeGuard[list[str]]:
+    return isinstance(value, list) and all(isinstance(item, str) for item in cast(list[object], value))
+
+
+def _check_name(name: str) -> None:
+    if not _NAME_RE.fullmatch(name):
+        raise ValueError(f"Invalid template link name {name!r}: names must match [a-zA-Z0-9_-]+.")
+
+
+def _not_a_string(key: str, value: object, *, allow_empty: bool) -> ValueError:
+    kind = "a string" if allow_empty else "a non-empty string"
+    message = f"'{key}' must be {kind}, got {_describe(value)}."
+    # An all-digit short SHA (`commit: 1234567`) or a ref like `checkout: 1.0`
+    # loads as a number unless quoted, so say how to fix it.
+    if isinstance(value, (bool, int, float)):
+        message += " YAML read it as a number or boolean; quote it to keep it a string."
+    return ValueError(message)
+
+
+def _required_str(data: Mapping[str, object], key: str) -> str:
+    if key not in data:
+        raise ValueError(f"missing required field '{key}'.")
+    value = data[key]
+    if not isinstance(value, str) or not value:
+        raise _not_a_string(key, value, allow_empty=False)
+    return value
+
+
+# An explicit null is read as "absent" for every optional field: cruft writes
+# `"checkout": null`, and a bare `skip:` in YAML loads as None.
+def _optional_str(data: Mapping[str, object], key: str, *, allow_empty: bool = False) -> str | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not (value or allow_empty):
+        raise _not_a_string(key, value, allow_empty=allow_empty)
+    return value
+
+
+def _context(data: Mapping[str, object]) -> dict[str, Any]:
+    value = data.get("context")
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"'context' must be a mapping, got {_describe(value)}.")
+    context = cast(dict[str, Any], value)
+    # update and reparametrize merge `cookiecutter` as a mapping; the variables
+    # inside it are arbitrary template values and are not validated.
+    cookiecutter = context.get("cookiecutter")
+    if cookiecutter is not None and not isinstance(cookiecutter, dict):
+        raise ValueError(f"'context.cookiecutter' must be a mapping, got {_describe(cookiecutter)}.")
+    return context
+
+
+def _name(data: Mapping[str, object]) -> str | None:
+    # The empty string is left to the slug check, which explains the allowed characters.
+    name = _optional_str(data, "name", allow_empty=True)
+    if name is not None:
+        _check_name(name)
+    return name
+
+
+def _skip(data: Mapping[str, object]) -> list[str]:
+    value = data.get("skip")
+    if value is None:
+        return []
+    if not _is_str_list(value):
+        raise ValueError(f"'skip' must be a list of strings, got {_describe(value)}.")
+    return value
+
+
+def _hooks(data: Mapping[str, object]) -> dict[str, list[str]]:
+    expected = "'hooks' must be a mapping of hook name to a list of commands"
+    value = data.get("hooks")
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{expected}, got {_describe(value)}.")
+    hooks: dict[str, list[str]] = {}
+    for event, commands in cast(dict[object, object], value).items():
+        if not isinstance(event, str):
+            raise ValueError(f"{expected}, got hook name {event!r}.")
+        if commands is None:
+            hooks[event] = []
+        elif _is_str_list(commands):
+            hooks[event] = commands
+        else:
+            raise ValueError(f"{expected}, got {_describe(commands)} for {event!r}.")
+    return hooks
 
 
 @dataclass
@@ -49,18 +147,19 @@ class TemplateEntry:
     hooks: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TemplateEntry":
+    def from_dict(cls, data: Mapping[str, object]) -> "TemplateEntry":
+        """Build an entry from one config mapping, raising ``ValueError`` naming the bad field."""
         return cls(
-            template=data["template"],
-            commit=data["commit"],
-            context=data.get("context", {}),
-            checkout=data.get("checkout"),
-            name=data.get("name"),
+            template=_required_str(data, "template"),
+            commit=_required_str(data, "commit"),
+            context=_context(data),
+            checkout=_optional_str(data, "checkout"),
+            name=_name(data),
             # Only rebake's own `target_directory` is honoured. cruft's
             # `directory` (template-side meaning) is ignored on purpose.
-            target_directory=data.get("target_directory") or ".",
-            skip=data.get("skip", []),
-            hooks=data.get("hooks", {}),
+            target_directory=_optional_str(data, "target_directory", allow_empty=True) or ".",
+            skip=_skip(data),
+            hooks=_hooks(data),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -96,8 +195,7 @@ class RebakeConfig:
         for entry in self.templates:
             if entry.name is None:
                 continue
-            if not _NAME_RE.fullmatch(entry.name):
-                raise ValueError(f"Invalid template link name {entry.name!r}: names must match [a-zA-Z0-9_-]+.")
+            _check_name(entry.name)
             if entry.name in seen:
                 raise ValueError(f"Duplicate template link name {entry.name!r}: names must be unique.")
             seen.add(entry.name)
@@ -137,30 +235,48 @@ class RebakeConfig:
         cruft_file = project_dir / CRUFT_FILE
 
         if rebake_file.exists():
+            source = rebake_file
             data = yaml.safe_load(rebake_file.read_text())
         elif cruft_file.exists():
+            source = cruft_file
             data = json.loads(cruft_file.read_text())
         else:
             raise FileNotFoundError(f"Neither {REBAKE_FILE} nor {CRUFT_FILE} found in {project_dir}")
 
+        try:
+            return cls._from_data(data)
+        except ValueError as e:
+            raise ValueError(f"Invalid config in {source}: {e}") from e
+
+    @classmethod
+    def _from_data(cls, data: object) -> "RebakeConfig":
+        unrecognized = "Unrecognized config schema: expected a 'templates' list or a top-level 'template' field"
         if not isinstance(data, dict):
-            raise ValueError(f"Unrecognized config schema in {project_dir}")
-        # isinstance only narrows to dict[Unknown, Unknown]; both supported formats are
-        # string-keyed mappings. Values stay Any: their shape is not validated here.
-        mapping = cast(dict[str, Any], data)
+            raise ValueError(f"{unrecognized}, got {_describe(data)}.")
+        mapping = cast(dict[str, object], data)
 
         # Multi-template form: {"templates": [...]}
         if "templates" in mapping:
             entries = mapping["templates"]
+            if not isinstance(entries, list):
+                raise ValueError(f"'templates' must be a list of template links, got {_describe(entries)}.")
             if not entries:
-                raise ValueError(f"'templates' is empty in {project_dir}; at least one template link is required.")
-            return cls(templates=[TemplateEntry.from_dict(entry) for entry in entries])
+                raise ValueError("'templates' is empty; at least one template link is required.")
+            templates: list[TemplateEntry] = []
+            for i, entry in enumerate(cast(list[object], entries)):
+                if not isinstance(entry, dict):
+                    raise ValueError(f"templates[{i}] must be a mapping, got {_describe(entry)}.")
+                try:
+                    templates.append(TemplateEntry.from_dict(cast(dict[str, object], entry)))
+                except ValueError as e:
+                    raise ValueError(f"templates[{i}]: {e}") from e
+            return cls(templates=templates)
 
         # Legacy single-template form (rebake.yaml or .cruft.json): {"template": ...}
         if "template" in mapping:
             return cls(templates=[TemplateEntry.from_dict(mapping)])
 
-        raise ValueError(f"Unrecognized config schema in {project_dir}")
+        raise ValueError(f"{unrecognized}.")
 
     def save(self, project_dir: Path = Path(".")) -> None:
         if not self.templates:
