@@ -274,11 +274,15 @@ def test_rebake_config_load_unrecognized_schema_raises(tmp_path):
         RebakeConfig.load(tmp_path)
 
 
-@pytest.mark.parametrize("content", ["", "- a\n- b\n", "just-a-string\n"], ids=["empty", "list", "scalar"])
-def test_rebake_config_load_non_mapping_raises(tmp_path, content):
+@pytest.mark.parametrize(
+    ("content", "found"),
+    [("", "null"), ("- a\n- b\n", "list"), ("just-a-string\n", "str")],
+    ids=["empty", "list", "scalar"],
+)
+def test_rebake_config_load_non_mapping_raises(tmp_path, content, found):
     (tmp_path / "rebake.yaml").write_text(content)
 
-    with pytest.raises(ValueError, match="Unrecognized config schema"):
+    with pytest.raises(ValueError, match=rf"Invalid config in .*rebake\.yaml: Unrecognized config schema.*got {found}"):
         RebakeConfig.load(tmp_path)
 
 
@@ -286,7 +290,7 @@ def test_rebake_config_load_empty_templates_raises(tmp_path):
     # Symmetric with save(): an empty list must not silently read as up-to-date.
     (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": []}))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Invalid config in .*rebake\.yaml: 'templates' is empty"):
         RebakeConfig.load(tmp_path)
 
 
@@ -404,7 +408,7 @@ def test_load_rejects_duplicate_names(tmp_path):
         ]
     }
     (tmp_path / "rebake.yaml").write_text(yaml.dump(data))
-    with pytest.raises(ValueError, match="Duplicate template link name 'go'"):
+    with pytest.raises(ValueError, match=r"Invalid config in .*rebake\.yaml: Duplicate template link name 'go'"):
         RebakeConfig.load(tmp_path)
 
 
@@ -516,7 +520,9 @@ def test_load_rejects_entry_missing_required_field(tmp_path, missing):
         ("template", "", r"'template' must be a non-empty string"),
         ("commit", 1234567, r"'commit' must be a non-empty string"),
         ("context", 3, r"'context' must be a mapping"),
-        ("checkout", ["main"], r"'checkout' must be a string"),
+        ("context", {"cookiecutter": [1]}, r"'context\.cookiecutter' must be a mapping"),
+        ("checkout", ["main"], r"'checkout' must be a non-empty string"),
+        ("checkout", "", r"'checkout' must be a non-empty string"),
         ("name", 1, r"'name' must be a string"),
         ("target_directory", 1, r"'target_directory' must be a string"),
         ("skip", "*.md", r"'skip' must be a list of strings"),
@@ -524,13 +530,17 @@ def test_load_rejects_entry_missing_required_field(tmp_path, missing):
         ("hooks", ["x"], r"'hooks' must be a mapping of hook name to a list of commands"),
         ("hooks", {"pre-update": "make"}, r"'hooks' must be a mapping of hook name to a list of commands"),
         ("hooks", {"pre-update": [1]}, r"'hooks' must be a mapping of hook name to a list of commands"),
+        ("hooks", {1: ["make"]}, r"'hooks' must be a mapping of hook name to a list of commands, got hook name 1"),
+        ("name", "a@b", r"Invalid template link name 'a@b'"),
     ],
     ids=[
         "template-int",
         "template-empty",
         "commit-int",
         "context-int",
+        "context-cookiecutter-list",
         "checkout-list",
+        "checkout-empty",
         "name-int",
         "target_directory-int",
         "skip-str",
@@ -538,6 +548,8 @@ def test_load_rejects_entry_missing_required_field(tmp_path, missing):
         "hooks-list",
         "hooks-str-commands",
         "hooks-non-str-command",
+        "hooks-non-str-name",
+        "name-not-slug",
     ],
 )
 def test_load_rejects_entry_field_with_wrong_type(tmp_path, field, value, message):
@@ -569,3 +581,18 @@ def test_load_rejects_malformed_legacy_cruft_json(tmp_path):
 
     with pytest.raises(ValueError, match=r"Invalid config in .*\.cruft\.json: missing required field 'commit'"):
         RebakeConfig.load(tmp_path)
+
+
+@pytest.mark.parametrize(("field", "value"), [("commit", 1234567), ("checkout", 1.0), ("checkout", True)])
+def test_load_hints_quoting_for_yaml_scalars(tmp_path, field, value):
+    # An all-digit short SHA or a ref like `1.0` loads as a number unless quoted.
+    (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": [{**_VALID_ENTRY, field: value}]}))
+
+    with pytest.raises(ValueError, match=rf"'{field}' must be a non-empty string.*quote it"):
+        RebakeConfig.load(tmp_path)
+
+
+def test_load_treats_null_hook_commands_as_empty(tmp_path):
+    (tmp_path / "rebake.yaml").write_text("template: x\ncommit: abc\nhooks:\n  pre-update:\n")
+
+    assert _first(tmp_path).hooks == {"pre-update": []}
