@@ -5,7 +5,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -45,8 +45,8 @@ class TemplateEntry:
     checkout: str | None = None
     name: str | None = None
     target_directory: str = "."
-    skip: list[str] = field(default_factory=list)
-    hooks: dict[str, list[str]] = field(default_factory=dict)
+    skip: list[str] = field(default_factory=list[str])
+    hooks: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TemplateEntry":
@@ -143,16 +143,22 @@ class RebakeConfig:
         else:
             raise FileNotFoundError(f"Neither {REBAKE_FILE} nor {CRUFT_FILE} found in {project_dir}")
 
+        if not isinstance(data, dict):
+            raise ValueError(f"Unrecognized config schema in {project_dir}")
+        # isinstance only narrows to dict[Unknown, Unknown]; both supported formats are
+        # string-keyed mappings. Values stay Any: their shape is not validated here.
+        mapping = cast(dict[str, Any], data)
+
         # Multi-template form: {"templates": [...]}
-        if isinstance(data, dict) and "templates" in data:
-            entries = data["templates"]
+        if "templates" in mapping:
+            entries = mapping["templates"]
             if not entries:
                 raise ValueError(f"'templates' is empty in {project_dir}; at least one template link is required.")
             return cls(templates=[TemplateEntry.from_dict(entry) for entry in entries])
 
         # Legacy single-template form (rebake.yaml or .cruft.json): {"template": ...}
-        if isinstance(data, dict) and "template" in data:
-            return cls(templates=[TemplateEntry.from_dict(data)])
+        if "template" in mapping:
+            return cls(templates=[TemplateEntry.from_dict(mapping)])
 
         raise ValueError(f"Unrecognized config schema in {project_dir}")
 

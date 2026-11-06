@@ -274,6 +274,14 @@ def test_rebake_config_load_unrecognized_schema_raises(tmp_path):
         RebakeConfig.load(tmp_path)
 
 
+@pytest.mark.parametrize("content", ["", "- a\n- b\n", "just-a-string\n"], ids=["empty", "list", "scalar"])
+def test_rebake_config_load_non_mapping_raises(tmp_path, content):
+    (tmp_path / "rebake.yaml").write_text(content)
+
+    with pytest.raises(ValueError, match="Unrecognized config schema"):
+        RebakeConfig.load(tmp_path)
+
+
 def test_rebake_config_load_empty_templates_raises(tmp_path):
     # Symmetric with save(): an empty list must not silently read as up-to-date.
     (tmp_path / "rebake.yaml").write_text(yaml.dump({"templates": []}))
