@@ -11,6 +11,7 @@ A spiritual successor to <a href="https://github.com/cruft/cruft">cruft</a> for 
   <a href="https://pypi.org/project/rebake/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/rebake?color=d2702b"></a>
   <a href="https://pypi.org/project/rebake/"><img alt="Python versions" src="https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fkitagry%2Frebake%2Fmain%2Fpyproject.toml"></a>
   <a href="https://github.com/kitagry/rebake/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/kitagry/rebake/actions/workflows/test.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/kitagry/rebake/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/kitagry/rebake"></a>
 </p>
 
 <p>
@@ -69,6 +70,7 @@ uv add rebake
 | [`rebake add`](#rebake-add) | Register and render an additional template into an existing repository |
 | [`rebake check`](#rebake-check) | Check whether the project is up-to-date with its template(s) |
 | [`rebake update`](#rebake-update) | Apply the latest template changes to the project |
+| [`rebake reparametrize`](#rebake-reparametrize) | Change template variables and re-apply the diff |
 
 ### `rebake create`
 
@@ -179,12 +181,17 @@ rebake update [PROJECT_DIR] [OPTIONS]
 Apply the latest template changes to the project. rebake will:
 
 1. Abort if there are uncommitted changes (commit or stash first)
-2. Run `pre-update` hooks (if defined) — abort if any hook fails
-3. Detect new variables added to the template and prompt for their values
-4. Generate a diff between the old and new rendered templates
-5. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution
-6. Update `rebake.yaml` with the new commit hash and any newly added variables
-7. Run `post-update` hooks (if defined)
+2. Then, for each selected template link in `rebake.yaml` order:
+   1. Detect new variables added to the template and prompt for their values
+      (with `--quiet`, exit 1 here — before this link's hooks have run)
+   2. Generate a diff between the old and new rendered templates
+   3. Run `pre-update` hooks (if defined) — abort if any hook fails, before the diff is applied
+   4. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution
+   5. Update `rebake.yaml` with the new commit hash and any newly added variables
+   6. Run `post-update` hooks (if defined)
+
+Each link is fully updated and saved before the next one starts, so if a later
+link fails (e.g. a hook exits non-zero), the links before it stay updated.
 
 | Option | Description |
 |---|---|
@@ -206,7 +213,8 @@ hooks:
     - make fmt
 ```
 
-Hooks run in the project directory with the following environment variables available:
+Hooks run in the template link's target directory (the repository root unless
+`target_directory` is set) with the following environment variables available:
 
 | Variable | Value |
 |---|---|
@@ -216,8 +224,7 @@ Hooks run in the project directory with the following environment variables avai
 | `REBAKE_PROJECT_DIR` | Absolute path to the repository root |
 | `REBAKE_TARGET_DIR` | Absolute path to this template's target directory (`REBAKE_PROJECT_DIR/<target_directory>`) |
 
-For multi-template repositories, hooks run once per template link with the
-working directory set to that link's target directory.
+For multi-template repositories, hooks run once per template link.
 
 #### Non-interactive usage (e.g. from an LLM agent)
 
@@ -231,6 +238,38 @@ rebake update --quiet
 When `--quiet` is used and new variables are found, rebake prints each variable
 name and its default value to stderr, then exits with code 1.
 
+### `rebake reparametrize`
+
+```bash
+rebake reparametrize [PROJECT_DIR] [OPTIONS]
+```
+
+Change the template variables of an existing project and re-apply the
+difference. rebake will:
+
+1. Abort if there are uncommitted changes (commit or stash first)
+2. Then, for each selected template link in `rebake.yaml` order:
+   1. Prompt for the link's cookiecutter variables, showing the current value
+      as the default (press Enter to keep it). Private variables (keys starting
+      with `_`) are carried over without a prompt. If nothing changed, the link
+      is left as-is.
+   2. Render the template at the link's **recorded `commit`** twice — with the
+      old and with the new values — and apply the diff with `git apply --reject`
+      (unresolvable hunks are saved as `.rej` files, as in `update`)
+   3. Save the new values to `rebake.yaml`
+
+As with `update`, each link is saved before the next one starts, so an aborted
+run keeps the links already reparametrized.
+
+The template commit is not changed; run [`rebake update`](#rebake-update)
+separately to follow the template. Hooks are not run, and there is no `--quiet`
+mode since the command is interactive by nature.
+
+| Option | Description |
+|---|---|
+| `--allow-untracked-files` | Allow reparametrize even if untracked files exist (no other changes). |
+| `--name`, `-n` | Reparametrize only the [multi-template](#multiple-templates) link with this `name`. Defaults to all links. Unlike `check`/`update`, this option is **not** repeatable. |
+
 ## Multiple templates
 
 A single repository can track more than one cookiecutter template — for example
@@ -243,7 +282,8 @@ sub-directory.
   applies each template's diff into its own `target_directory`.
 - Pass `--name`/`-n` (repeatable) to scope either command to specific links by
   their `name` — handy for opening a focused, single-subproject PR when several
-  links have drifted at once. This mirrors `reparametrize --name`.
+  links have drifted at once. [`rebake reparametrize`](#rebake-reparametrize)
+  takes the same option, but only a single `--name`.
 - Every link is self-contained: `context`, `checkout`, `skip` and `hooks` are
   all per-entry, so each template keeps its own variables and hooks.
 
