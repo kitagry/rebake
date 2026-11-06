@@ -10,6 +10,7 @@ from rebake.utils.git import (
     generate_diff,
     get_renamed_paths,
     is_working_tree_clean,
+    patch_target_paths,
     redirect_patch_paths,
     resolve_template_commit,
 )
@@ -451,3 +452,114 @@ def test_apply_patch_keeps_other_files_when_template_renames_moved_file(tmp_path
     assert not success
     assert (tmp_path / "other.txt").read_text() == "new\n"
     assert (tmp_path / "docs" / "x.txt").read_text() == "".join(f"line{i}\n" for i in range(10))
+
+
+@pytest.fixture
+def quoted_git_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force git's default C-quoting of non-ASCII paths regardless of the developer's global config."""
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.quotePath")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
+
+
+@pytest.mark.usefixtures("quoted_git_paths")
+@pytest.mark.parametrize(
+    ("origin", "destination"),
+    [
+        ("日本語.txt", "ドキュメント/日本語.txt"),
+        ('quote"d.txt', "docs/back\\slash.txt"),
+        ("tab\tname.txt", "docs/with space.txt"),
+    ],
+)
+def test_get_renamed_paths_detects_git_mv_of_quoted_path(tmp_path: Path, origin: str, destination: str) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / origin).write_text("hello\n")
+    _commit_all(tmp_path, "initial")
+    (tmp_path / destination).parent.mkdir(exist_ok=True)
+    subprocess.run(["git", "mv", origin, destination], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "move")
+
+    assert get_renamed_paths(tmp_path) == {origin: destination}
+
+
+def test_redirect_patch_paths_rewrites_quoted_header_paths() -> None:
+    """git C-quotes non-ASCII paths in diff headers; they must be unquoted to match renames."""
+    patch = (
+        b'diff --git "a/\\346\\227\\245.txt" "b/\\346\\227\\245.txt"\n'
+        b"index 1111111..2222222 100644\n"
+        b'--- "a/\\346\\227\\245.txt"\n'
+        b'+++ "b/\\346\\227\\245.txt"\n'
+        b"@@ -1 +1 @@\n-hello\n+hello world\n"
+    )
+
+    result = redirect_patch_paths(patch, {"日.txt": "docs/日.txt"})
+
+    assert (
+        result
+        == (
+            "diff --git a/docs/日.txt b/docs/日.txt\n"
+            "index 1111111..2222222 100644\n"
+            "--- a/docs/日.txt\n"
+            "+++ b/docs/日.txt\n"
+            "@@ -1 +1 @@\n-hello\n+hello world\n"
+        ).encode()
+    )
+
+
+def test_redirect_patch_paths_quotes_destination_with_special_characters() -> None:
+    patch = b"diff --git a/x b/x\nindex 1111111..2222222 100644\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+
+    result = redirect_patch_paths(patch, {"x": 'docs/q"\\\t.txt'})
+
+    assert result == (
+        b'diff --git "a/docs/q\\"\\\\\\t.txt" "b/docs/q\\"\\\\\\t.txt"\n'
+        b"index 1111111..2222222 100644\n"
+        b'--- "a/docs/q\\"\\\\\\t.txt"\n'
+        b'+++ "b/docs/q\\"\\\\\\t.txt"\n'
+        b"@@ -1 +1 @@\n-a\n+b\n"
+    )
+
+
+@pytest.mark.usefixtures("quoted_git_paths")
+@pytest.mark.parametrize(
+    ("origin", "destination"),
+    [
+        ("日本語.txt", "ドキュメント/日本語.txt"),
+        ('quote"d.txt', "docs/back\\slash.txt"),
+        ("tab\tname.txt", "docs/with space.txt"),
+    ],
+)
+def test_apply_patch_redirects_git_moved_file_with_quoted_path(tmp_path: Path, origin: str, destination: str) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / origin).write_text("hello\n")
+    _commit_all(tmp_path, "initial")
+    (tmp_path / destination).parent.mkdir(exist_ok=True)
+    subprocess.run(["git", "mv", origin, destination], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "move")
+
+    old_dir = tmp_path / "old_render"
+    new_dir = tmp_path / "new_render"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    (old_dir / origin).write_text("hello\n")
+    (new_dir / origin).write_text("hello world\n")
+
+    success, stderr = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert success, stderr
+    assert (tmp_path / destination).read_text() == "hello world\n"
+    assert not (tmp_path / origin).exists()
+
+
+def test_patch_target_paths_lists_modified_and_deleted_files_only() -> None:
+    """Only entries that expect an existing file are candidates for redirection."""
+    patch = (
+        b"diff --git a/mod.txt b/mod.txt\n--- a/mod.txt\n+++ b/mod.txt\n@@ -1 +1 @@\n-a\n+b\n"
+        b"diff --git a/del.txt b/del.txt\ndeleted file mode 100644\n--- a/del.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
+        b"diff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+a\n"
+        b"diff --git a/old.txt b/renamed.txt\nsimilarity index 100%\nrename from old.txt\nrename to renamed.txt\n"
+        b'diff --git "a/\\346\\227\\245.txt" "b/\\346\\227\\245.txt"\n--- "a/\\346\\227\\245.txt"\n'
+        b'+++ "b/\\346\\227\\245.txt"\n@@ -1 +1 @@\n-a\n+b\n'
+    )
+
+    assert patch_target_paths(patch) == ["mod.txt", "del.txt", "日.txt"]

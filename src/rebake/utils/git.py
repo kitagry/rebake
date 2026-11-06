@@ -101,9 +101,16 @@ def get_renamed_paths(project_dir: Path = Path(".")) -> dict[str, str]:
     Only mappings whose original path no longer exists and whose destination
     currently exists are returned, so a path that was later recreated is ignored.
     """
-    project_dir = project_dir.resolve()
-    git_root = _git_root(project_dir)
-    rel_prefix = project_dir.relative_to(git_root).as_posix()
+    rel_prefix = (
+        subprocess.run(
+            ["git", "rev-parse", "--show-prefix"],
+            capture_output=True,
+            check=True,
+            cwd=str(project_dir),
+        )
+        .stdout.decode(errors="surrogateescape")
+        .rstrip("\n")
+    )
 
     # A repository without commits has no history to follow
     has_head = subprocess.run(
@@ -114,24 +121,25 @@ def get_renamed_paths(project_dir: Path = Path(".")) -> dict[str, str]:
     if has_head.returncode != 0:
         return {}
 
+    # -z emits raw NUL-separated paths; otherwise git C-quotes non-ASCII and special characters
     result = subprocess.run(
-        ["git", "log", "--reverse", "-M", "--diff-filter=R", "--name-status", "--format=", "--", "."],
+        ["git", "log", "-z", "--reverse", "-M", "--diff-filter=R", "--name-status", "--format=", "--", "."],
         capture_output=True,
-        text=True,
         check=True,
         cwd=str(project_dir),
     )
+    fields = iter(result.stdout.decode(errors="surrogateescape").split("\0"))
 
     # Each chain is [origin, current]; an origin that was recreated and moved
     # again starts a separate chain rather than extending the first one.
     chains: list[list[str]] = []
     chain_by_current: dict[str, list[str]] = {}
-    for line in result.stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) != 3 or not parts[0].startswith("R"):
+    # Rename records are "R<score>\0<old>\0<new>\0"; skip empty separators between commits
+    for status in fields:
+        if not status.startswith("R"):
             continue
-        old = _strip_repo_prefix(parts[1], rel_prefix)
-        new = _strip_repo_prefix(parts[2], rel_prefix)
+        old = _strip_repo_prefix(next(fields), rel_prefix)
+        new = _strip_repo_prefix(next(fields), rel_prefix)
         if old is None or new is None:
             continue
         chain = chain_by_current.pop(old, None)
@@ -150,12 +158,12 @@ def get_renamed_paths(project_dir: Path = Path(".")) -> dict[str, str]:
 
 
 def _strip_repo_prefix(path: str, rel_prefix: str) -> str | None:
-    """Convert a repo-root-relative path to a project_dir-relative one."""
-    if rel_prefix in ("", "."):
-        return path
-    prefix = rel_prefix.rstrip("/") + "/"
-    if path.startswith(prefix):
-        return path[len(prefix) :]
+    """Convert a repo-root-relative path to a project_dir-relative one.
+
+    rel_prefix is the output of `git rev-parse --show-prefix`: empty or ending with "/".
+    """
+    if path.startswith(rel_prefix):
+        return path[len(rel_prefix) :]
     return None
 
 
@@ -170,47 +178,107 @@ def redirect_patch_paths(patch: bytes, renames: dict[str, str]) -> bytes:
     """
     if not renames:
         return patch
-    entries = re.split(rb"(?m)^(?=diff --git )", patch)
-    return b"".join(_redirect_entry(entry, renames) for entry in entries)
+    return b"".join(_redirect_entry(entry, renames) for entry in _split_entries(patch))
+
+
+def patch_target_paths(patch: bytes) -> list[str]:
+    """Return the paths of existing files the patch modifies or deletes, i.e. the redirect candidates."""
+    targets: list[str] = []
+    for entry in _split_entries(patch):
+        lines = entry.splitlines(keepends=True)
+        target = _existing_file_target(lines[: _header_end(lines)])
+        if target is not None:
+            targets.append(target.decode(errors="surrogateescape"))
+    return targets
+
+
+def _split_entries(patch: bytes) -> list[bytes]:
+    return re.split(rb"(?m)^(?=diff --git )", patch)
+
+
+def _header_end(lines: list[bytes]) -> int:
+    for i, line in enumerate(lines[1:], start=1):
+        if line.startswith((b"@@", b"GIT binary patch")):
+            return i
+    return len(lines)
+
+
+def _existing_file_target(header: list[bytes]) -> bytes | None:
+    """Return the path of an entry that modifies or deletes an existing file, else None."""
+    if not header or not header[0].startswith(b"diff --git "):
+        return None
+    if any(line.startswith((b"new file mode", b"rename from", b"copy from")) for line in header):
+        return None
+    return _parse_header_path(header[0])
 
 
 def _redirect_entry(entry: bytes, renames: dict[str, str]) -> bytes:
     lines = entry.splitlines(keepends=True)
-    if not lines or not lines[0].startswith(b"diff --git "):
-        return entry
-
-    header_end = len(lines)
-    for i, line in enumerate(lines[1:], start=1):
-        if line.startswith((b"@@", b"GIT binary patch")):
-            header_end = i
-            break
+    header_end = _header_end(lines)
     header = lines[:header_end]
 
-    if any(line.startswith((b"new file mode", b"rename from", b"copy from")) for line in header):
+    o = _existing_file_target(header)
+    if o is None:
         return entry
-
-    match = re.fullmatch(rb"diff --git a/(.+) b/\1\n?", header[0])
-    if match is None:
-        return entry
-    new = renames.get(match.group(1).decode(errors="surrogateescape"))
+    new = renames.get(o.decode(errors="surrogateescape"))
     if new is None:
         return entry
 
-    o = match.group(1)
     n = new.encode(errors="surrogateescape")
-    rewritten = [b"diff --git a/" + n + b" b/" + n + b"\n"]
+    rewritten = [b"diff --git " + _quote_path(b"a/" + n) + b" " + _quote_path(b"b/" + n) + b"\n"]
     for line in header[1:]:
-        rewritten.append(_rewrite_file_line(line, b"--- a/", o, n) or _rewrite_file_line(line, b"+++ b/", o, n) or line)
+        rewritten.append(
+            _rewrite_file_line(line, b"--- ", b"a/", o, n) or _rewrite_file_line(line, b"+++ ", b"b/", o, n) or line
+        )
     return b"".join(rewritten + lines[header_end:])
 
 
-def _rewrite_file_line(line: bytes, prefix: bytes, old: bytes, new: bytes) -> bytes | None:
-    # git appends a tab after ---/+++ paths that contain spaces
-    body = line.rstrip(b"\n")
-    for suffix in (b"", b"\t"):
-        if body == prefix + old + suffix:
-            return prefix + new + suffix + line[len(body) :]
-    return None
+def _parse_header_path(line: bytes) -> bytes | None:
+    """Return the unquoted path of a `diff --git` line whose a/ and b/ sides are the same file."""
+    quoted = re.fullmatch(rb'diff --git "a/((?:[^"\\]|\\.)*)" "b/\1"\n?', line)
+    if quoted is not None:
+        return _unquote_path(b'"' + quoted.group(1) + b'"')
+    match = re.fullmatch(rb"diff --git a/(.+) b/\1\n?", line)
+    return None if match is None else match.group(1)
+
+
+def _rewrite_file_line(line: bytes, marker: bytes, side: bytes, old: bytes, new: bytes) -> bytes | None:
+    if not line.startswith(marker):
+        return None
+    body = line[len(marker) :].rstrip(b"\n")
+    if _unquote_path(body.removesuffix(b"\t")) != side + old:
+        return None
+    path = _quote_path(side + new)
+    # Like git, terminate unquoted paths containing spaces with a tab
+    suffix = b"\t" if b" " in path and not path.startswith(b'"') else b""
+    return marker + path + suffix + line[len(marker) + len(body) :]
+
+
+_C_UNESCAPES = {b"a": b"\a", b"b": b"\b", b"t": b"\t", b"n": b"\n", b"v": b"\v", b"f": b"\f", b"r": b"\r"}
+_C_ESCAPES = {v[0]: b"\\" + k for k, v in _C_UNESCAPES.items()} | {ord('"'): b'\\"', ord("\\"): b"\\\\"}
+_NEEDS_QUOTING = re.compile(rb'[\x00-\x1f"\\\x7f]')
+
+
+def _unquote_path(path: bytes) -> bytes:
+    """Decode a path that git C-quoted (e.g. "\\346\\227\\245.txt"); unquoted paths are returned as is."""
+    if len(path) < 2 or not (path.startswith(b'"') and path.endswith(b'"')):
+        return path
+
+    def unescape(match: re.Match[bytes]) -> bytes:
+        escaped = match.group(1)
+        if len(escaped) == 3:
+            return bytes([int(escaped, 8)])
+        return _C_UNESCAPES.get(escaped, escaped)
+
+    return re.sub(rb"\\([0-7]{3}|.)", unescape, path[1:-1])
+
+
+def _quote_path(path: bytes) -> bytes:
+    """C-quote a path when git apply could not read it verbatim; non-ASCII bytes are kept raw."""
+    if _NEEDS_QUOTING.search(path) is None:
+        return path
+    escaped = _NEEDS_QUOTING.sub(lambda m: _C_ESCAPES.get(m.group(0)[0], b"\\%03o" % m.group(0)[0]), path)
+    return b'"' + escaped + b'"'
 
 
 def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]:
@@ -227,8 +295,10 @@ def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]
     git_root = _git_root(project_dir)
     directory = project_dir.relative_to(git_root)
 
-    # Redirect hunks for files the user relocated with git mv to their new path
-    patch = redirect_patch_paths(patch, get_renamed_paths(project_dir))
+    # Redirect hunks for files the user relocated with git mv to their new path.
+    # The history scan is costly on long histories, so run it only when a target is missing.
+    if any(not (project_dir / path).exists() for path in patch_target_paths(patch)):
+        patch = redirect_patch_paths(patch, get_renamed_paths(project_dir))
 
     cmd_base = ["git", "apply", "--ignore-whitespace"]
     # --directory=. causes git to produce invalid paths like ./file.txt
