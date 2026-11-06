@@ -328,6 +328,10 @@ after the initial render, such as lock files. The semantics match cruft's, so a
 - An entry containing `*` is a glob pattern, matched like Python's `Path.glob`.
   `*.lock` matches only at the top level. Use `**/*.lock` to match at any depth.
 
+Entries match the rendered paths. If a template variable is part of a skipped
+path and `reparametrize` changes it, list the path under both its old and new
+names.
+
 ### Legacy formats (read-only)
 
 For backward compatibility, rebake also reads the older single-template

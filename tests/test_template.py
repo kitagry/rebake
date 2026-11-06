@@ -80,3 +80,23 @@ def test_remove_skipped_paths_unlinks_symlink_without_following(tmp_path: Path) 
 
     assert not (root / "link").exists()
     assert (target_dir / "inner.txt").exists()
+
+
+def test_remove_skipped_paths_does_not_follow_symlinked_directory(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    outside_dir = tmp_path / "outside"
+    _touch(outside_dir / "f.txt")
+    root.mkdir()
+    (root / "link").symlink_to(outside_dir, target_is_directory=True)
+
+    remove_skipped_paths(root, ["link/f.txt", "link/*.txt", "**/*.txt"])
+
+    assert (outside_dir / "f.txt").exists()
+
+
+def test_remove_skipped_paths_ignores_absolute_glob(tmp_path: Path) -> None:
+    _touch(tmp_path / "a.lock")
+
+    remove_skipped_paths(tmp_path, [str(tmp_path / "*.lock")])
+
+    assert (tmp_path / "a.lock").exists()
