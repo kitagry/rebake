@@ -588,3 +588,92 @@ def test_redirect_patch_paths_tab_terminates_quoted_destination_with_space() -> 
 
     assert b'--- "a/docs/q\\" s.txt"\t\n' in result
     assert b'+++ "b/docs/q\\" s.txt"\t\n' in result
+
+
+def _render_dirs(tmp_path: Path) -> tuple[Path, Path]:
+    old_dir = tmp_path / "old_render"
+    new_dir = tmp_path / "new_render"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    return old_dir, new_dir
+
+
+def test_apply_patch_writes_rej_when_template_deletes_locally_modified_file(tmp_path: Path) -> None:
+    """git apply --reject writes no .rej for a failed removal, so the conflict must be saved explicitly."""
+    _init_repo(tmp_path)
+    (tmp_path / "gone.txt").write_text("a\nb\nlocal\n")
+    (tmp_path / "other.txt").write_text("old\n")
+    _commit_all(tmp_path, "initial")
+
+    old_dir, new_dir = _render_dirs(tmp_path)
+    (old_dir / "gone.txt").write_text("a\nb\n")
+    (old_dir / "other.txt").write_text("old\n")
+    (new_dir / "other.txt").write_text("new\n")
+
+    success, _ = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert not success
+    assert (tmp_path / "gone.txt").read_text() == "a\nb\nlocal\n"
+    rej = (tmp_path / "gone.txt.rej").read_bytes()
+    assert b"deleted file mode" in rej
+    assert b"+++ /dev/null" in rej
+    assert (tmp_path / "other.txt").read_text() == "new\n"
+
+
+def test_apply_patch_ignores_deletion_of_file_already_removed(tmp_path: Path) -> None:
+    """A file the user already deleted is in the state the template wants; other hunks still apply."""
+    _init_repo(tmp_path)
+    (tmp_path / "other.txt").write_text("old\n")
+    _commit_all(tmp_path, "initial")
+
+    old_dir, new_dir = _render_dirs(tmp_path)
+    (old_dir / "gone.txt").write_text("a\n")
+    (old_dir / "other.txt").write_text("old\n")
+    (new_dir / "other.txt").write_text("new\n")
+
+    success, stderr = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert success, stderr
+    assert not (tmp_path / "gone.txt").exists()
+    assert not (tmp_path / "gone.txt.rej").exists()
+    assert (tmp_path / "other.txt").read_text() == "new\n"
+
+
+def test_apply_patch_ignores_already_removed_file_alongside_conflict(tmp_path: Path) -> None:
+    """Dropping an already-removed deletion must not hide a real conflict elsewhere."""
+    _init_repo(tmp_path)
+    (tmp_path / "other.txt").write_text("mine\n")
+    _commit_all(tmp_path, "initial")
+
+    old_dir, new_dir = _render_dirs(tmp_path)
+    (old_dir / "gone.txt").write_text("a\n")
+    (old_dir / "other.txt").write_text("old\n")
+    (new_dir / "other.txt").write_text("new\n")
+
+    success, _ = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert not success
+    assert (tmp_path / "other.txt.rej").exists()
+    assert not (tmp_path / "gone.txt.rej").exists()
+
+
+def test_apply_patch_writes_rej_at_moved_path_when_template_deletes_modified_moved_file(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "x.txt").write_text("a\n")
+    _commit_all(tmp_path, "initial")
+    (tmp_path / "docs").mkdir()
+    subprocess.run(["git", "mv", "x.txt", "docs/x.txt"], cwd=tmp_path, check=True, capture_output=True)
+    _commit_all(tmp_path, "move")
+    (tmp_path / "docs" / "x.txt").write_text("a\nlocal\n")
+    _commit_all(tmp_path, "edit")
+
+    old_dir, new_dir = _render_dirs(tmp_path)
+    (old_dir / "x.txt").write_text("a\n")
+    (old_dir / "keep.txt").write_text("k\n")
+    (new_dir / "keep.txt").write_text("k\n")
+
+    success, _ = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert not success
+    assert (tmp_path / "docs" / "x.txt").read_text() == "a\nlocal\n"
+    assert b"deleted file mode" in (tmp_path / "docs" / "x.txt.rej").read_bytes()

@@ -304,6 +304,21 @@ def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]
     if any(not (project_dir / path).exists() for path in patch_target_paths(patch)):
         patch = redirect_patch_paths(patch, get_renamed_paths(project_dir))
 
+    # A file the user already removed is in the state the template wants, but git
+    # apply would fail on it ("No such file"), so leave it out of the patch.
+    deletions: dict[str, bytes] = {}
+    kept: list[bytes] = []
+    for entry in _split_entries(patch):
+        path = _deletion_path(entry)
+        if path is not None:
+            if not _lexists(project_dir / path):
+                continue
+            deletions[path] = entry
+        kept.append(entry)
+    patch = b"".join(kept)
+    if not patch.strip():
+        return True, ""
+
     cmd_base = ["git", "apply", "--ignore-whitespace"]
     # --directory=. causes git to produce invalid paths like ./file.txt
     if directory != Path("."):
@@ -325,7 +340,27 @@ def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]
         capture_output=True,
         cwd=str(git_root),
     )
+    # git apply --reject writes no .rej when a removal fails because the user
+    # changed the file, so save the deletion diff itself as the conflict to resolve.
+    for path, entry in deletions.items():
+        target = project_dir / path
+        if _lexists(target):
+            target.with_name(target.name + ".rej").write_bytes(entry)
     return False, result.stderr.decode(errors="replace")
+
+
+def _lexists(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _deletion_path(entry: bytes) -> str | None:
+    """Return the path of an entry that deletes an existing file, else None."""
+    lines = entry.splitlines(keepends=True)
+    header = lines[: _header_end(lines)]
+    if not any(line.startswith(b"deleted file mode") for line in header):
+        return None
+    target = _existing_file_target(header)
+    return None if target is None else target.decode(errors="surrogateescape")
 
 
 def _common_ancestor(path1: Path, path2: Path) -> Path | None:
