@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import tempfile
@@ -311,7 +312,7 @@ def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]
     for entry in _split_entries(patch):
         path = _deletion_path(entry)
         if path is not None:
-            if not _lexists(project_dir / path):
+            if not os.path.lexists(project_dir / path):
                 continue
             deletions[path] = entry
         kept.append(entry)
@@ -333,6 +334,16 @@ def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]
     if result.returncode == 0:
         return True, ""
 
+    # git apply --reject writes no .rej when a removal fails because the user
+    # changed the file, so find those removals up front and save each deletion diff
+    # as the conflict to resolve. Checking whether the file survives afterwards is not
+    # enough: a type change (file <-> symlink) deletes and recreates the same path.
+    failed_deletions = {
+        path: entry
+        for path, entry in deletions.items()
+        if subprocess.run([*cmd_base, "--check", "-"], input=entry, capture_output=True, cwd=str(git_root)).returncode
+    }
+
     # Partial fallback: apply what we can, write .rej files for conflicts
     result = subprocess.run(
         [*cmd_base, "--reject", "-"],
@@ -340,17 +351,10 @@ def apply_patch(patch: bytes, project_dir: Path = Path(".")) -> tuple[bool, str]
         capture_output=True,
         cwd=str(git_root),
     )
-    # git apply --reject writes no .rej when a removal fails because the user
-    # changed the file, so save the deletion diff itself as the conflict to resolve.
-    for path, entry in deletions.items():
+    for path, entry in failed_deletions.items():
         target = project_dir / path
-        if _lexists(target):
-            target.with_name(target.name + ".rej").write_bytes(entry)
+        target.with_name(target.name + ".rej").write_bytes(entry)
     return False, result.stderr.decode(errors="replace")
-
-
-def _lexists(path: Path) -> bool:
-    return path.exists() or path.is_symlink()
 
 
 def _deletion_path(entry: bytes) -> str | None:

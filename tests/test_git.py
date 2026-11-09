@@ -677,3 +677,27 @@ def test_apply_patch_writes_rej_at_moved_path_when_template_deletes_modified_mov
     assert not success
     assert (tmp_path / "docs" / "x.txt").read_text() == "a\nlocal\n"
     assert b"deleted file mode" in (tmp_path / "docs" / "x.txt.rej").read_bytes()
+
+
+def test_apply_patch_writes_no_rej_when_template_turns_file_into_symlink_alongside_conflict(tmp_path: Path) -> None:
+    """A type change is a deletion plus a creation of the same path; the recreated path is not a failed removal."""
+    _init_repo(tmp_path)
+    (tmp_path / "target.txt").write_text("t\n")
+    (tmp_path / "link").write_text("target.txt")
+    (tmp_path / "other.txt").write_text("mine\n")
+    _commit_all(tmp_path, "initial")
+
+    old_dir, new_dir = _render_dirs(tmp_path)
+    for d in (old_dir, new_dir):
+        (d / "target.txt").write_text("t\n")
+    (old_dir / "link").write_text("target.txt")
+    (new_dir / "link").symlink_to("target.txt")
+    (old_dir / "other.txt").write_text("old\n")
+    (new_dir / "other.txt").write_text("new\n")
+
+    success, _ = apply_patch(generate_diff(old_dir, new_dir), tmp_path)
+
+    assert not success
+    assert (tmp_path / "link").is_symlink()
+    assert (tmp_path / "other.txt.rej").exists()
+    assert not (tmp_path / "link.rej").exists()
