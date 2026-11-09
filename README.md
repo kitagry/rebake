@@ -186,7 +186,7 @@ Apply the latest template changes to the project. rebake will:
       (with `--quiet`, exit 1 here — before this link's hooks have run)
    2. Generate a diff between the old and new rendered templates
    3. Run `pre-update` hooks (if defined) — abort if any hook fails, before the diff is applied
-   4. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution
+   4. Apply the diff with `git apply --reject` — applicable hunks are written immediately; unresolvable hunks are saved as `.rej` files for manual resolution. A file the template deleted is removed if it still matches the template; if you changed it, it is kept and the deletion diff is saved as its `.rej` file; if you already removed it, nothing happens
    5. Update `rebake.yaml` with the new commit hash and any newly added variables
    6. Run `post-update` hooks (if defined)
 

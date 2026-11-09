@@ -137,3 +137,20 @@ def test_update_ignores_skipped_paths(project_dir: Path, template_repo: Path) ->
     assert (project_dir / "README.md").read_text() == "# my-project\n"
     assert not (project_dir / "uv.lock").exists()
     assert (project_dir / "CONTRIBUTING.md").read_text() == "updated\n"
+
+
+@pytest.mark.e2e
+def test_update_reports_conflict_when_deleted_file_was_modified(project_dir: Path, template_repo: Path) -> None:
+    contributing = project_dir / "CONTRIBUTING.md"
+    contributing.write_text(contributing.read_text() + "local note\n")
+    subprocess.run(["git", "commit", "-am", "edit CONTRIBUTING.md"], cwd=project_dir, check=True)
+    (template_repo / "{{cookiecutter.project_name}}" / "CONTRIBUTING.md").unlink()
+    subprocess.run(["git", "add", "."], cwd=template_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "remove CONTRIBUTING.md"], cwd=template_repo, check=True)
+
+    result = runner.invoke(app, ["update", str(project_dir)])
+
+    assert result.exit_code == 0
+    assert contributing.exists()
+    assert "Some hunks could not be applied" in result.output
+    assert "CONTRIBUTING.md.rej" in result.output
